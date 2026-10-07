@@ -70,6 +70,8 @@ export interface EmployeeDef {
   role: string;
   permanentTrait: TraitPole;
   visual: string;
+  /** Used by narrative log lines (D40). Defaults to 'they'. */
+  pronoun?: 'she' | 'he' | 'they';
 }
 
 export interface DepartmentDef {
@@ -290,11 +292,13 @@ export interface Player {
   /** Event modifier added to the next card this turn (consumed on use). */
   actionBonus: number;
   stats: PlayerStats;
+  /** Influence gained/lost while it is not this player's turn; added at their next refresh (D25, D39). */
+  influenceBank?: number;
 }
 
 export type Phase =
   | 'event'        // resolving the turn's event (vote / choice / target / reveal)
-  | 'play'         // influence refreshed, management paid, cards drawn; negotiation + focus + playing
+  | 'play'         // influence refreshed, management paid, cards drawn; negotiation + playing (no focus, D37)
   | 'save'         // choose cards to keep
   | 'summary'      // end-turn summary, waiting for confirm
   | 'accusation'   // a mole was exposed; team lead must accuse
@@ -318,7 +322,7 @@ export type Pending =
   | { kind: 'eventTarget'; player: PlayerId; eventId: EventId; optionId: 'A' | 'B'; choose: 'employee' | 'dept'; candidates: string[] }
   /** Player learned a hidden trait; decide public (0) or private (1 Influence). */
   | { kind: 'revealChoice'; player: PlayerId; employeeId: EmployeeId; trait: TraitPole; weight: number }
-  /** Player chooses Manage/Expand, then plays cards; also where giveCard happens. */
+  /** Player plays cards (legal targets come from each card's mode, D37); `focus` is always null. Also where giveCard happens. */
   | { kind: 'play'; player: PlayerId; focus: Focus | null }
   /** Choose which hand cards to save (1 Influence each, max 3 in reserve). */
   | { kind: 'save'; player: PlayerId }
@@ -378,6 +382,73 @@ export interface ActiveEvent {
   outcome: 'A' | 'B' | null;
   /** Engine bookkeeping: players whose option effects are still to be applied (after voting). */
   queue?: PlayerId[];
+  /** Departments this event touches. Local: the one dept. Global: every player's resolved dept (filled as they resolve). */
+  affectedDeptIds: DeptId[];
+  /** Engine bookkeeping: per-player results recorded while effects apply (becomes EventResult.perPlayer). */
+  results?: EventPlayerResult[];
+}
+
+/** One recorded consequence of an event for one player (D41). Private details (trait values) stay out. */
+export type EventChange =
+  | { kind: 'loyalty'; employeeId: EmployeeId; from: LoyaltyState; to: LoyaltyState }
+  | { kind: 'influence'; delta: number }
+  | { kind: 'protected'; deptId: DeptId; untilRound: number }
+  | { kind: 'severity'; delta: number }
+  /** trait/weight: stored always; in views only when `public` or the viewer is `by`. `public` is settled by the revealChoice. */
+  | { kind: 'reveal'; employeeId: EmployeeId; by: PlayerId; public: boolean; trait?: TraitPole; weight?: number }
+  | { kind: 'investigate'; found: boolean }
+  | { kind: 'promise'; employeeId: EmployeeId; honored: boolean }
+  | { kind: 'rebel'; employeeId: EmployeeId }
+  | { kind: 'text'; text: string };
+
+export interface EventPlayerResult {
+  player: PlayerId;
+  deptId: DeptId | null;
+  /** Majority Global: voted for the losing option (minority effects applied). */
+  minority: boolean;
+  /** Empty = nothing happened to this player. */
+  changes: EventChange[];
+}
+
+/** Structured outcome of the last fully resolved event (D41), for the UI's "what happened" modal. */
+export interface EventResult {
+  eventId: EventId;
+  templateId: string;
+  title: string;
+  type: EventType;
+  situation: string;
+  votes: { player: PlayerId; optionId: 'A' | 'B'; optionLabel: string }[];
+  /** Majority Global: the winning option. Local: the chosen option. Individual Global / Reveal: null. */
+  outcome: { optionId: 'A' | 'B'; label: string; text: string } | null;
+  perPlayer: EventPlayerResult[];
+  /** state.actionCount when it resolved. */
+  actionCount: number;
+}
+
+/** Current turn bookkeeping for UI animation (deal / event card). */
+export interface TurnInfo {
+  /** 1-based count of turns started this game. */
+  number: number;
+  /** Cards dealt to the active player in this turn's draw phase (views: only the active player sees ids). */
+  drawnThisTurn: CardId[];
+  /** Event card drawn at the start of this turn, if any. */
+  eventCardId: EventId | null;
+}
+
+/** Last resolved influence card, for the UI's centre banner (D40). */
+export interface CardResult {
+  actor: PlayerId;
+  cardName: string;
+  employeeId: EmployeeId;
+  deptId: DeptId;
+  band: 'Failure' | 'Standard Success' | 'Strong Success' | 'Blocked';
+  from: LoyaltyState;
+  to: LoyaltyState;
+  reaction: string;
+  /** Only in the actor's view. */
+  explanation?: Explanation;
+  /** state.actionCount when it resolved (lets the UI detect a new result). */
+  actionCount: number;
 }
 
 export interface GameConfig {
@@ -420,6 +491,12 @@ export interface GameState {
   /** Engine bookkeeping: prompts (reveal choices, accusations) raised while an event resolves,
    *  handled one at a time before the turn continues. */
   interrupts?: Pending[];
+  /** See TurnInfo. Optional so pre-D39 saved states still load. */
+  turn?: TurnInfo;
+  /** See CardResult; stored as the actor sees it. Others see a Blocked play as Failure with `publicReaction` (D30). */
+  lastCardResult?: CardResult & { publicReaction: string };
+  /** Kept until the next event resolves (D41). */
+  lastEventResult?: EventResult;
 }
 
 export interface ScoreBreakdown {
@@ -464,6 +541,8 @@ export interface DepartmentView extends DepartmentDef {
   /** 0 normal, 1 unstable (2 rebels), 2 crisis (3), 3 full rebellion (4). */
   instability: 0 | 1 | 2 | 3;
   protectedUntilRound: number;
+  /** Team lead's player name, or null for a Neutral department. */
+  leadName: string | null;
 }
 
 export interface PlayerView {
@@ -487,7 +566,8 @@ export interface PlayerView {
   favorable: number;
   rebels: number;             // rebels inside their departments
   activeMoles: number | null; // viewer only
-  intel: { employeeId: EmployeeId; trait: TraitPole; weight: number }[] | null; // viewer only
+  /** Viewer only, most recent first. */
+  intel: { employeeId: EmployeeId; deptId: DeptId; trait: TraitPole; weight: number }[] | null;
 }
 
 export interface GameView {
@@ -510,6 +590,11 @@ export interface GameView {
   winner: PlayerId | null;
   scores: Record<string, ScoreBreakdown> | null;
   actionCount: number;
+  turn: TurnInfo;
+  /** Last resolved influence card (D40); `explanation` only for the actor. */
+  lastCardResult?: CardResult;
+  /** Last fully resolved event (D41). */
+  lastEventResult?: EventResult;
 }
 
 /** Pre-play forecast for the hand UI (§60). */

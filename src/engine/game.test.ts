@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { Game } from './game';
 import { randomModifier } from './rng';
-import { E } from './rules';
+import { E, reaction } from './rules';
 import { TRAIT_DIMENSIONS, dimensionOf } from './types';
 import type { Action, Department, EventCard, EventEffect, GameConfig, InfluenceCard, PlayerId } from './types';
-import { buildInfluenceDeck } from '../content';
+import { buildEventDeck, buildInfluenceDeck } from '../content';
 
 // ---------------------------------------------------------------- helpers
 const cfg = (o: Partial<GameConfig> = {}): GameConfig => {
@@ -59,6 +59,7 @@ const emps = (g: Game, d: Department) => d.employeeIds.map((id) => E(g.state, id
 const play = (g: Game, cardId: string, targetId: string, player = g.state.currentPlayer) =>
   g.dispatch({ type: 'playCard', player, cardId, targetId });
 const lastPrivate = (g: Game, pid: PlayerId) => [...g.state.log].reverse().find((l) => l.visibility === pid)!.text;
+const res = (g: Game, viewer: PlayerId) => g.view(viewer).lastCardResult!;
 
 function pushEvent(g: Game, c: Partial<EventCard> & { effectsA?: EventEffect[]; effectsB?: EventEffect[] }) {
   const { effectsA = [], effectsB = [], ...rest } = c;
@@ -108,28 +109,75 @@ describe('setup (§5, §77, D10)', () => {
 
 // ---------------------------------------------------------------- turn sequence
 describe('turn sequence (§53, §54, D22, D25)', () => {
-  it('rotates the first-player marker and skips eliminated players', () => {
+  it('plain round-robin in seat order every round, skipping eliminated seats (D38)', () => {
     const g = Game.create(cfg());
     const order: [number, number][] = [];
     for (let t = 0; t < 6; t++) { toPlay(g); order.push([g.state.round, g.state.currentPlayer]); done(g); }
-    expect(order).toEqual([[1, 0], [1, 1], [1, 2], [2, 1], [2, 2], [2, 0]]);
+    expect(order).toEqual([[1, 0], [1, 1], [1, 2], [2, 0], [2, 1], [2, 2]]);
+    expect(g.state.firstPlayer).toBe(0);
 
     const h = playGame({ playerCount: 4, players: Array.from({ length: 4 }, (_, i) => ({ name: `P${i}`, isBot: false })) });
     h.state.players[1].eliminated = true;
     own(h, 1).teamLead = null;
-    const seen: number[] = [];
-    for (let t = 0; t < 4; t++) { toPlay(h); seen.push(h.state.currentPlayer); done(h); }
-    expect(seen).toEqual([0, 2, 3, 2]); // round 2 starts at seat 2: marker skipped eliminated seat 1
+    const seen: [number, number][] = [];
+    for (let t = 0; t < 6; t++) { toPlay(h); seen.push([h.state.round, h.state.currentPlayer]); done(h); }
+    expect(seen).toEqual([[1, 0], [1, 2], [1, 3], [2, 0], [2, 2], [2, 3]]);
+
+    const k = playGame();
+    done(k); toPlay(k); done(k); toPlay(k); // P2's turn
+    k.state.players[0].eliminated = true;
+    own(k, 0).teamLead = null;
+    const r2: [number, number][] = [];
+    for (let t = 0; t < 3; t++) { toPlay(k); r2.push([k.state.round, k.state.currentPlayer]); done(k); }
+    expect(r2).toEqual([[1, 2], [2, 1], [2, 2]]);
+    expect(k.state.firstPlayer).toBe(1); // first non-eliminated seat
   });
 
-  it('refreshes influence to rank max and draws 4 from round 2', () => {
-    const g = Game.create(cfg());
-    toPlay(g);
-    expect(g.state.players[0].influence).toBeGreaterThanOrEqual(4);
-    done(g); toPlay(g); done(g); toPlay(g); done(g); toPlay(g); // round 2, player 1
-    expect(g.state.round).toBe(2);
-    expect(g.state.players[1].hand.length).toBeGreaterThanOrEqual(4);
-    expect(g.state.players[0].influence).toBe(0); // unused influence does not carry over
+  it('every turn (round 1 and later): influence SET to max (+bank) before the event, cost after, hand refilled to 4 (D25, D26, D39)', () => {
+    const g = playGame();
+    g.state.eventDeck = []; g.state.eventDiscard = [];
+    for (let t = 0; t < 7; t++) {
+      const pid = g.state.currentPlayer;
+      const p = g.state.players[pid];
+      // leftover influence stays visible after the turn (no zeroing)
+      p.influence = 1;
+      done(g);
+      expect(p.influence).toBe(1);
+      const q = g.state.players[g.state.currentPlayer];
+      expect(g.state.pending).toMatchObject({ kind: 'play', player: q.id });
+      expect(q.influence).toBe(4); // TeamLead max, cost 0 with 1 dept — not 1 + 4
+      if (g.state.round > 1) {
+        expect(q.hand).toHaveLength(4);
+        expect(g.view(q.id).turn.drawnThisTurn).toEqual(q.hand.map((c) => c.id));
+        expect(g.view((q.id + 1) % 3).turn.drawnThisTurn).toEqual([]);
+      }
+    }
+    expect(g.state.round).toBe(3);
+
+    // reshuffles the discard when the deck runs dry
+    const h = playGame();
+    h.state.eventDeck = []; h.state.eventDiscard = [];
+    h.state.influenceDiscard = [...h.state.influenceDeck];
+    h.state.influenceDeck = [];
+    while (h.state.round < 2) { toPlay(h); done(h); }
+    toPlay(h);
+    expect(h.state.players[h.state.currentPlayer].hand).toHaveLength(4);
+
+    // banked off-turn gain is added on top; management cost is paid AFTER the event
+    const k = playGame();
+    neutral(k).teamLead = 1;
+    k.state.players[1].rank = 'Manager'; // max 5, cost 1 (2 depts)
+    k.state.players[1].influenceBank = 2;
+    k.state.players[1].influence = 3; // leftover display value: ignored
+    let seenAtEvent = -1;
+    pushEvent(k, { effectsA: [], effectsB: [] });
+    done(k);
+    expect(k.state.pending).toMatchObject({ kind: 'eventChoice', player: 1 });
+    seenAtEvent = k.state.players[1].influence;
+    k.dispatch({ type: 'eventChoice', player: 1, optionId: 'A' });
+    expect(seenAtEvent).toBe(7); // 5 + 2 banked, cost not yet paid
+    expect(k.state.players[1].influence).toBe(6);
+    expect(k.state.players[1].influenceBank).toBe(0);
   });
 });
 
@@ -171,15 +219,15 @@ describe('influence resolution (§35–§37, §13, D4)', () => {
     const e = emps(g, neutral(g))[0];
     Object.assign(e, { permanentTrait: 'Ambitious', hiddenTrait1: 'CreditHungry', hiddenTrait2: 'Cautious' });
     g.state.players[0].rank = 'Manager';
-    g.dispatch({ type: 'focus', player: 0, focus: 'Expand' });
     const id = give(g, 0, { baseEffect: 1, primary: 'CreditHungry', secondary: 'Ambitious', adverse: 'ByTheBook', cost: 2 });
     const pred = g.predict(0, id, e.id);
     expect(pred).toMatchObject({ requiredSpend: 2, base: 1, rankBonus: 1, unknownTraitMayAffect: true, min: 2, max: 4, legal: true });
     expect(pred.traitMods).toEqual([{ trait: 'Ambitious', value: 1 }]);
     fixRandom(g, 0);
     expect(play(g, id, e.id).ok).toBe(true);
-    expect(lastPrivate(g, 0)).toContain('= 5 → Strong Success');
-    expect(lastPrivate(g, 0)).toContain('A hidden trait affected this decision.');
+    expect(res(g, 0)).toMatchObject({ band: 'Strong Success', explanation: { score: 5, band: 'Strong Success' } });
+    expect(res(g, 0).explanation!.hiddenTraitAffected).toBe(true);
+    expect(res(g, 1).explanation).toBeUndefined(); // breakdown is the actor's only
     expect(e.loyalty).toBe('Favorable');
     expect(e.politicalOwner).toBe(0);
     expect(g.state.players[0].influence).toBe(8);
@@ -187,22 +235,20 @@ describe('influence resolution (§35–§37, §13, D4)', () => {
 
   it('bands: failure does not move, standard moves one state, adverse subtracts', () => {
     const g = playGame();
-    g.dispatch({ type: 'focus', player: 0, focus: 'Expand' });
     const [a, b] = emps(g, neutral(g));
     Object.assign(a, { permanentTrait: 'ByTheBook' });
     fixRandom(g, 0);
     play(g, give(g, 0, { baseEffect: 2, adverse: 'ByTheBook' }), a.id); // 2 − 1 = 1 → Failure
     expect(a.loyalty).toBe('Neutral');
-    expect(lastPrivate(g, 0)).toContain('Failure');
+    expect(res(g, 0).band).toBe('Failure');
     fixRandom(g, 0);
     play(g, give(g, 0, { baseEffect: 2 }), b.id);
     expect(b.loyalty).toBe('Favorable');
-    expect(lastPrivate(g, 0)).toContain('Standard Success');
+    expect(res(g, 0).band).toBe('Standard Success');
   });
 
   it('enforces required spend, once-per-turn targeting and D4 legality', () => {
     const g = playGame();
-    g.dispatch({ type: 'focus', player: 0, focus: 'Expand' });
     const [a, b, c] = emps(g, neutral(g));
     a.loyalty = 'Loyal'; a.politicalOwner = 1;
     b.loyalty = 'Rebel';
@@ -220,22 +266,55 @@ describe('influence resolution (§35–§37, §13, D4)', () => {
     expect(play(g, give(g, 0, { direction: 'negative' }), a.id).error).toMatch(/already targeted/); // §13
   });
 
-  it('enforces Manage/Expand focus and card modes (§31, §32)', () => {
+  it('no turn focus: play needs no focus action and the focus action is an accepted no-op (D37)', () => {
     const g = playGame();
-    const mine = emps(g, own(g, 0))[0];
-    const other = emps(g, neutral(g))[0];
-    const id = give(g, 0, { mode: 'Internal' });
-    expect(play(g, id, mine.id).error).toMatch(/Choose Manage or Expand/);
-    expect(g.legalTargets(0, id)).toEqual(own(g, 0).employeeIds); // before focus: implied by card mode
-    g.dispatch({ type: 'focus', player: 0, focus: 'Expand' });
-    expect(play(g, id, mine.id).error).toMatch(/Internal/);
-    expect(play(g, give(g, 0), mine.id).error).toMatch(/outside your departments/);
-    const h = playGame();
-    h.dispatch({ type: 'focus', player: 0, focus: 'Manage' });
-    expect(play(h, give(h, 0, { mode: 'External' }), emps(h, own(h, 0))[0].id).error).toMatch(/External/);
-    expect(play(h, give(h, 0), emps(h, neutral(h))[0].id).error).toMatch(/own department/);
-    expect(h.legalTargets(0, give(h, 0))).toEqual(own(h, 0).employeeIds);
-    expect(other).toBeDefined();
+    expect(g.state.pending).toEqual({ kind: 'play', player: 0, focus: null });
+    const before = JSON.stringify({ ...g.state, actionCount: 0 });
+    expect(g.dispatch({ type: 'focus', player: 0, focus: 'Expand' }).ok).toBe(true);
+    expect(JSON.stringify({ ...g.state, actionCount: 0 })).toBe(before);
+    expect(g.state.focus).toBeNull();
+    fixRandom(g, 0);
+    expect(play(g, give(g, 0, { mode: 'External' }), emps(g, own(g, 0))[0].id).ok).toBe(true); // mode is ignored (D42)
+    expect(g.state.pending).toMatchObject({ kind: 'play', focus: null });
+  });
+
+  it('legal targets follow card direction, not mode (D42)', () => {
+    const g = playGame();
+    const mine = own(g, 0).employeeIds, rival = own(g, 1).employeeIds, free = neutral(g).employeeIds;
+    const sorted = (xs: string[]) => [...xs].sort();
+    for (const mode of ['Internal', 'External', 'Both'] as const) {
+      const pos = give(g, 0, { mode });
+      expect(sorted(g.legalTargets(0, pos))).toEqual(sorted(g.state.departments.filter((d) => d.teamLead === 0 || d.teamLead === null).flatMap((d) => d.employeeIds)));
+      const neg = give(g, 0, { mode, direction: 'negative' });
+      expect(g.legalTargets(0, neg)).not.toContain(mine[0]);
+      expect(g.legalTargets(0, neg)).toEqual(expect.arrayContaining([...rival, ...free]));
+      const mole = give(g, 0, { mode, direction: 'mole', cost: 3 });
+      expect(sorted(g.legalTargets(0, mole))).toEqual(sorted(g.state.departments.filter((d) => d.teamLead !== null && d.teamLead !== 0).flatMap((d) => d.employeeIds)));
+    }
+    expect(g.predict(0, give(g, 0), rival[0])).toMatchObject({ legal: false, reason: 'Positive cards work on your own team' });
+    expect(g.predict(0, give(g, 0, { direction: 'negative' }), mine[0])).toMatchObject({ legal: false, reason: 'Hostile cards target other teams' });
+    expect(g.predict(0, give(g, 0), free[0]).legal).toBe(true); // POSITIVE_CARDS_ALLOW_NEUTRAL
+  });
+
+  it('logs a narrative line naming card, employee and department, with no score anywhere (D40)', () => {
+    const g = playGame();
+    const e = emps(g, neutral(g))[0];
+    fixRandom(g, 0);
+    play(g, give(g, 0, { baseEffect: 2 }), e.id);
+    const line = g.state.log.at(-1)!;
+    expect(line).toMatchObject({ visibility: 'public', tag: 'card' });
+    expect(line.text).toMatch(new RegExp(`^P0 used Test Card on ${e.name} of ${neutral(g).name}\\. .+\\. Status changed from Neutral to Favorable\\.$`));
+    expect(g.state.log.some((l) => /Base|Random|= \d/.test(l.text))).toBe(false);
+    const r = res(g, 1);
+    expect(r).toMatchObject({ actor: 0, cardName: 'Test Card', employeeId: e.id, deptId: e.deptId, band: 'Standard Success', from: 'Neutral', to: 'Favorable', actionCount: g.state.actionCount });
+    expect(line.text).toContain(r.reaction);
+    fixRandom(g, 0);
+    const f = emps(g, neutral(g))[1];
+    play(g, give(g, 0, { baseEffect: 0 }), f.id);
+    expect(g.state.log.at(-1)!.text).toMatch(/Status unchanged \(Neutral\)\.$/);
+    // reactions are deterministic and use the roster pronoun
+    const neha = g.state.employees.find((x) => x.id === 'neha-kapoor');
+    if (neha) expect(reaction(g.state, neha, 'positive', 'Failure')).not.toMatch(/\{|\bthey\b|\bhe\b/i);
   });
 
   it('is side-effect free on illegal actions', () => {
@@ -252,7 +331,6 @@ describe('influence resolution (§35–§37, §13, D4)', () => {
 describe('capture, promotion and CEO (§20–§22, D18)', () => {
   it('captures a Neutral dept at 3/4 and promotes', () => {
     const g = playGame();
-    g.dispatch({ type: 'focus', player: 0, focus: 'Expand' });
     const d = neutral(g);
     const [a, b, c] = emps(g, d);
     for (const e of [a, b]) Object.assign(e, { loyalty: 'Favorable', politicalOwner: 0 });
@@ -268,16 +346,17 @@ describe('capture, promotion and CEO (§20–§22, D18)', () => {
 
   it('captures a rival dept, eliminates them, cleans up (D18) and checks CEO', () => {
     const g = playGame();
-    g.dispatch({ type: 'focus', player: 0, focus: 'Expand' });
     const d = own(g, 1);
     const [a, b, c, x] = emps(g, d);
-    for (const e of [a, b]) Object.assign(e, { loyalty: 'Favorable', politicalOwner: 0 });
+    // D42: positive cards can't reach a rival's team, so the 3rd alignment comes from elsewhere (e.g. an old capture);
+    // any resolved card re-checks thresholds.
+    for (const e of [a, b, c]) Object.assign(e, { loyalty: 'Favorable', politicalOwner: 0 });
     const elsewhere = emps(g, neutral(g))[0];
     Object.assign(elsewhere, { loyalty: 'Loyal', politicalOwner: 1 });
     x.mole = { creator: 1, ability: 'SilentBlock', plantedRound: 1, expiresRound: 4, used: false, exposed: false, creatorRevealed: false };
     g.state.players[1].reserve = [{ ...g.state.influenceDeck[0], id: 'r#1' }];
     fixRandom(g, 0);
-    play(g, give(g, 0), c.id);
+    play(g, give(g, 0), emps(g, own(g, 0))[0].id);
     const p1 = g.state.players[1];
     expect(d.teamLead).toBe(0);
     expect(p1.eliminated).toBe(true);
@@ -290,7 +369,6 @@ describe('capture, promotion and CEO (§20–§22, D18)', () => {
     const free = h.state.departments.filter((dd) => dd.teamLead === null);
     free.slice(0, 3).forEach((dd) => { dd.teamLead = 0; });
     const target = free[3];
-    h.dispatch({ type: 'focus', player: 0, focus: 'Expand' });
     for (const e of emps(h, target).slice(0, 2)) Object.assign(e, { loyalty: 'Favorable', politicalOwner: 0 });
     fixRandom(h, 0);
     play(h, give(h, 0, { baseEffect: 3 }), emps(h, target)[2].id);
@@ -305,7 +383,6 @@ describe('capture, promotion and CEO (§20–§22, D18)', () => {
 describe('rebels and department thresholds (§14, §17, §18, D15, D17)', () => {
   it('influence-created rebel inclines to the biggest hostile contributor; tie → actor', () => {
     const g = playGame();
-    g.dispatch({ type: 'focus', player: 0, focus: 'Expand' });
     const [a, b] = emps(g, own(g, 1));
     Object.assign(a, { loyalty: 'Skeptical', hostileContributions: { 2: 5 } });
     Object.assign(b, { loyalty: 'Skeptical', hostileContributions: { 2: 2 } });
@@ -340,7 +417,6 @@ describe('rebels and department thresholds (§14, §17, §18, D15, D17)', () => 
 
   it('2 rebels = Unstable, 3 = leadership crisis, 4 = settlement', () => {
     const g = playGame();
-    g.dispatch({ type: 'focus', player: 0, focus: 'Expand' });
     const d = own(g, 1);
     const [a, b, c, x] = emps(g, d);
     for (const e of [a, b]) Object.assign(e, { loyalty: 'Rebel', rebelInclination: 2 });
@@ -365,7 +441,6 @@ describe('rebels and department thresholds (§14, §17, §18, D15, D17)', () => 
 describe('moles (§40–§44, D5, D6, D22)', () => {
   it('plants secretly, refuses Loyal targets, and expires at plantedRound + 3', () => {
     const g = playGame();
-    g.dispatch({ type: 'focus', player: 0, focus: 'Expand' });
     const [a, b] = emps(g, own(g, 1));
     a.loyalty = 'Loyal'; a.politicalOwner = 1;
     const mole = { direction: 'mole' as const, cost: 3, moleAbility: 'SilentBlock' as const };
@@ -386,13 +461,14 @@ describe('moles (§40–§44, D5, D6, D22)', () => {
     const g = playGame();
     const [a] = emps(g, own(g, 0));
     a.mole = { creator: 2, ability: 'SilentBlock', plantedRound: 1, expiresRound: 4, used: false, exposed: false, creatorRevealed: false };
-    g.dispatch({ type: 'focus', player: 0, focus: 'Manage' });
     fixRandom(g, 0);
     play(g, give(g, 0, { baseEffect: 9 }), a.id);
     expect(a.loyalty).toBe('Neutral');
     expect(a.mole!.used).toBe(true);
     expect(lastPrivate(g, 2)).toMatch(/^Mole triggered successfully/);
-    expect(g.state.log.filter((l) => l.visibility === 'public').at(-1)!.text).toMatch(/: Failure\.$/);
+    expect(g.state.log.filter((l) => l.visibility === 'public').at(-1)!.text).toMatch(/Status unchanged \(Neutral\)\.$/);
+    expect(res(g, 1).band).toBe('Failure'); // D30: others see a plain failure
+    expect(res(g, 0).band).toBe('Blocked');
     // lock still holds after the ability is spent (§42)
     a.mole!.used = true;
     g.state.players[0].targetedThisTurn = [];
@@ -402,7 +478,6 @@ describe('moles (§40–§44, D5, D6, D22)', () => {
 
   it('Rebel Pressure turns 2 rebels into a leadership crisis (§43)', () => {
     const g = playGame();
-    g.dispatch({ type: 'focus', player: 0, focus: 'Expand' });
     const d = neutral(g);
     d.teamLead = 1; // P1 has 2 depts now
     const [a, b, c] = emps(g, d);
@@ -430,8 +505,8 @@ describe('moles (§40–§44, D5, D6, D22)', () => {
       Object.assign(emps(g, victimDept)[0], { loyalty: 'Favorable', politicalOwner: 0 });
       g.state.eventDeck.push({ id: 'aud', templateId: 'aud', type: 'Global', resolution: 'majority', title: 'Audit', situation: '', options: [
         { id: 'A', label: 'A', text: '', effects: [{ kind: 'investigate' }] }, { id: 'B', label: 'B', text: '', effects: [] }] });
-      done(g); // → round 2, P1 first
-      for (const pid of [1, 2, 0]) g.dispatch({ type: 'eventChoice', player: pid, optionId: 'A' });
+      done(g); // → round 2, P0 first (D38)
+      for (const pid of [0, 1, 2]) g.dispatch({ type: 'eventChoice', player: pid, optionId: 'A' });
       for (let i = 0; i < 5 && g.state.pending.kind === 'revealChoice'; i++) g.dispatch({ type: 'revealChoice', player: (g.state.pending as { player: number }).player, mode: 'public' });
       expect(g.state.pending).toMatchObject({ kind: 'accusation', player: 0 });
       const ev = emps(g, victimDept)[0];
@@ -443,7 +518,7 @@ describe('moles (§40–§44, D5, D6, D22)', () => {
       if (accused === 2) { expect(line).toMatch(/correct: P2/); expect(ev.loyalty).toBe('Favorable'); }
       else { expect(line).toMatch(/incorrect/); expect(ev.loyalty).toBe('Skeptical'); }
       toPlay(g);
-      expect(g.state.pending).toMatchObject({ kind: 'play', player: 1 });
+      expect(g.state.pending).toMatchObject({ kind: 'play', player: 0 });
       expect(a).toBeDefined();
     }
   });
@@ -453,7 +528,6 @@ describe('moles (§40–§44, D5, D6, D22)', () => {
 describe('promises and events (D7, D8, D14, D19, D21, §29, §48)', () => {
   it('promise fires on any success and costs a state on expiry', () => {
     const g = playGame();
-    g.dispatch({ type: 'focus', player: 0, focus: 'Manage' });
     const e = emps(g, own(g, 0))[0];
     fixRandom(g, 0);
     play(g, give(g, 0, { secondaryEffect: 'promise' }), e.id); // standard success
@@ -483,7 +557,8 @@ describe('promises and events (D7, D8, D14, D19, D21, §29, §48)', () => {
     g4.dispatch({ type: 'eventChoice', player: 0, optionId: 'B' });
     expect(g4.state.log.some((l) => l.text.includes('Outcome: No'))).toBe(true); // 2–2 → P1 (active) voted B
     expect(g4.state.players[2].hand.length).toBe(handBefore + 1); // minority effect
-    expect(g4.state.players[0].influence).toBe(2); // off-turn gain banked (D25)
+    expect(g4.state.players[0].influenceBank).toBe(2); // off-turn gain banked (D25)
+    expect(g4.state.players[0].influence).toBe(10); // leftover display value untouched (D39)
   });
 
   it('local event hits a random owned dept; Unstable adds an extra non-rebel target (D8)', () => {
@@ -506,7 +581,7 @@ describe('promises and events (D7, D8, D14, D19, D21, §29, §48)', () => {
     done(g);
     g.dispatch({ type: 'eventChoice', player: 1, optionId: 'A' });
     expect(emps(g, own(g, 1)).every((e) => e.loyalty === 'Neutral')).toBe(true);
-    expect(g.state.log.some((l) => l.text.includes('protected: a negative effect was blocked'))).toBe(true);
+    expect(g.state.log.some((l) => l.text.includes('is protected, a negative effect was blocked'))).toBe(true);
   });
 
   it('reveal choice: public marks the trait, private costs 1 and is hidden from others', () => {
@@ -540,6 +615,242 @@ describe('promises and events (D7, D8, D14, D19, D21, §29, §48)', () => {
   });
 });
 
+
+// ---------------------------------------------------------------- event flow (owner playtest fixes)
+type Opt = EventCard['options'][number];
+const gEvent = (resolution: 'individual' | 'majority', a: Partial<Opt> = {}, b: Partial<Opt> = {}): EventCard => ({
+  id: `gev#${cardSeq++}`, templateId: 'gev', type: 'Global', resolution, title: 'Test Global', situation: '',
+  options: [{ id: 'A', label: 'Alpha', text: '', effects: [], ...a }, { id: 'B', label: 'Beta', text: '', effects: [], ...b }],
+});
+/** Round 2, P0's turn, with `ev` as P0's event; cards were dealt by the draw phase. */
+function round2With(ev: EventCard, o: Partial<GameConfig> = {}) {
+  const g = playGame(o);
+  g.state.eventDeck = []; g.state.eventDiscard = [];
+  const n = g.state.players.length;
+  for (let t = 0; t < n - 1; t++) { done(g); toPlay(g); }
+  g.state.eventDeck.push(ev);
+  done(g);
+  expect(g.state).toMatchObject({ round: 2, currentPlayer: 0 });
+  return g;
+}
+/** Answer every prompt, recording "kind:player" until P0's play phase (or 60 steps). */
+function drive(g: Game, pickTarget: (c: string[]) => string = (c) => c[0], vote: (pid: number) => 'A' | 'B' = () => 'A') {
+  const seen: string[] = [];
+  for (let i = 0; i < 60; i++) {
+    const pd = g.state.pending;
+    if (pd.kind === 'gameOver') break;
+    seen.push(`${pd.kind}:${pd.player}${pd.kind === 'eventTarget' ? `:${pd.choose}` : ''}`);
+    if (pd.kind === 'play') break;
+    if (pd.kind === 'eventChoice') g.dispatch({ type: 'eventChoice', player: pd.player, optionId: vote(pd.player) });
+    else if (pd.kind === 'eventTarget') g.dispatch({ type: 'eventTarget', player: pd.player, targetId: pickTarget(pd.candidates) });
+    else if (pd.kind === 'revealChoice') g.dispatch({ type: 'revealChoice', player: pd.player, mode: 'public' });
+    else if (pd.kind === 'accusation') g.dispatch({ type: 'accuse', player: pd.player, accused: 2 });
+    else throw new Error(`unexpected ${pd.kind}`);
+  }
+  return seen;
+}
+const expectPlayFor0 = (g: Game) => {
+  expect(g.state.pending).toEqual({ kind: 'play', player: 0, focus: null });
+  expect(g.state.phase).toBe('play');
+  expect(g.state.activeEvent).toBeNull();
+  expect(g.state.players[0].hand).toHaveLength(4);
+  expect(g.state.players[0].influence).toBe(4); // TeamLead max, cost 0
+};
+
+describe('Global events never skip the active player\'s card phase (item 3)', () => {
+  const variants: [string, Partial<Opt>][] = [
+    ['no targets', { effects: [{ kind: 'loyalty', target: 'random', delta: 1 }] }],
+    ['chooseEmployee', { chooseEmployee: true, effects: [{ kind: 'loyalty', target: 'chosen', delta: 1 }] }],
+    ['chooseDept + chooseEmployee', { chooseDept: true, chooseEmployee: true, effects: [{ kind: 'loyalty', target: 'chosen', delta: -1 }] }],
+    ['reveal interrupts', { effects: [{ kind: 'reveal', target: 'random' }] }],
+    ['investigate → accusation', { effects: [{ kind: 'investigate' }] }],
+  ];
+  for (const resolution of ['individual', 'majority'] as const) {
+    for (const [name, opt] of variants) {
+      it(`${resolution} / ${name}`, () => {
+        const g = round2With(gEvent(resolution, opt, opt));
+        neutral(g).teamLead = 0; // a second dept so chooseDept really asks …
+        g.state.players[0].influence = 4; // … without changing this turn's budget (cost 1 is paid after the event)
+        const mole = emps(g, own(g, 0))[3];
+        if (name.startsWith('investigate')) {
+          for (const d of g.state.departments.filter((x) => x.teamLead === 0)) {
+            E(g.state, d.employeeIds[3]).mole = { creator: 2, ability: 'SilentBlock', plantedRound: 1, expiresRound: 9, used: false, exposed: false, creatorRevealed: false };
+          }
+        }
+        const seen = drive(g);
+        expect(seen.at(-1)).toBe('play:0');
+        expect(seen.filter((x) => x.startsWith('eventChoice'))).toEqual(['eventChoice:0', 'eventChoice:1', 'eventChoice:2']);
+        if (name === 'reveal interrupts') expect(seen.filter((x) => x.startsWith('revealChoice'))).toHaveLength(3);
+        if (name.startsWith('investigate')) expect(seen).toContain('accusation:0');
+        expect(g.state.pending).toEqual({ kind: 'play', player: 0, focus: null });
+        expect(g.state.players[0].hand).toHaveLength(4);
+        expect(g.state.players[0].influence).toBe(3); // 4 − cost 1 (two depts)
+        expect(mole).toBeDefined();
+      });
+    }
+  }
+
+  it('the same holds for a plain Local event', () => {
+    const g = round2With({ ...gEvent('individual', { chooseEmployee: true, effects: [{ kind: 'loyalty', target: 'chosen', delta: 1 }] }), type: 'Local', resolution: undefined });
+    expect(drive(g)).toEqual(['eventChoice:0', 'eventTarget:0:employee', 'play:0']);
+    expectPlayFor0(g);
+  });
+
+  it('still reaches play when the event knocks out a reveal target player\'s dept (interrupt dropped)', () => {
+    const g = round2With(gEvent('majority', { effects: [{ kind: 'investigate' }] }));
+    const d = own(g, 1);
+    E(g.state, d.employeeIds[0]).mole = { creator: 0, ability: 'SilentBlock', plantedRound: 1, expiresRound: 9, used: false, exposed: false, creatorRevealed: false };
+    drive(g);
+    expectPlayFor0(g);
+  });
+});
+
+describe('event target prompts (item 4)', () => {
+  it('individual Global: each vote is immediately followed by that player\'s target prompts', () => {
+    const g = round2With(gEvent('individual', { chooseDept: true, chooseEmployee: true, effects: [{ kind: 'loyalty', target: 'chosen', delta: 1 }] },
+      { effects: [{ kind: 'influence', delta: 1 }] }));
+    neutral(g).teamLead = 0; // P0 leads two depts → real dept choice
+    const seen = drive(g, (c) => c[0], (pid) => (pid === 2 ? 'B' : 'A'));
+    expect(seen).toEqual(['eventChoice:0', 'eventTarget:0:dept', 'eventTarget:0:employee', 'eventChoice:1', 'eventTarget:1:employee',
+      'eventChoice:2', 'play:0']);
+    expect(g.state.players[2].influenceBank).toBe(1);
+  });
+
+  it('employee candidates are the 4 employees of the chosen department, and the pick is what moves', () => {
+    const g = round2With(gEvent('individual', { chooseDept: true, chooseEmployee: true, effects: [{ kind: 'loyalty', target: 'chosen', delta: 1 }] }));
+    const second = neutral(g);
+    second.teamLead = 0;
+    g.dispatch({ type: 'eventChoice', player: 0, optionId: 'A' });
+    expect(g.state.pending).toMatchObject({ kind: 'eventTarget', player: 0, choose: 'dept' });
+    g.dispatch({ type: 'eventTarget', player: 0, targetId: second.id });
+    const pd = g.state.pending;
+    expect(pd).toMatchObject({ kind: 'eventTarget', player: 0, choose: 'employee', candidates: second.employeeIds });
+    const pickId = second.employeeIds[2];
+    g.dispatch({ type: 'eventTarget', player: 0, targetId: pickId });
+    drive(g);
+    expect(E(g.state, pickId).loyalty).toBe('Favorable');
+    expect(emps(g, second).filter((e) => e.loyalty !== 'Neutral').map((e) => e.id)).toEqual([pickId]);
+    expect(g.state.log.some((l) => l.tag === 'event' && l.text.includes(`Test Global in ${second.name} — P0 chose Alpha: ${E(g.state, pickId).name} (Neutral → Favorable)`))).toBe(true);
+  });
+
+  it('majority Global: all votes first, then targets in seat order from the active player', () => {
+    const g = round2With(gEvent('majority', { chooseEmployee: true, effects: [{ kind: 'loyalty', target: 'chosen', delta: 1 }] }));
+    const seen = drive(g);
+    expect(seen).toEqual(['eventChoice:0', 'eventChoice:1', 'eventChoice:2',
+      'eventTarget:0:employee', 'eventTarget:1:employee', 'eventTarget:2:employee', 'play:0']);
+  });
+
+  it('Promotion Season — Honor Commitments: candidates are only promised employees', () => {
+    const promo = buildEventDeck('full').find((c) => c.templateId === 'promotion-season')!;
+    const g = round2With(promo);
+    const [a, b, c] = emps(g, own(g, 0));
+    a.promise = { byPlayer: 0, expiresRound: 5 };
+    c.promise = { byPlayer: 0, expiresRound: 5 };
+    g.dispatch({ type: 'eventChoice', player: 0, optionId: 'A' });
+    expect(g.state.pending).toMatchObject({ kind: 'eventTarget', player: 0, choose: 'employee', candidates: [a.id, c.id] });
+    g.dispatch({ type: 'eventTarget', player: 0, targetId: c.id });
+    expect(g.state.pending).toMatchObject({ kind: 'eventChoice', player: 1 }); // next voter only after P0's pick
+    drive(g, (cs) => cs[0], () => 'B');
+    expect(c).toMatchObject({ loyalty: 'Favorable', promise: null });
+    expect(a).toMatchObject({ loyalty: 'Skeptical', promise: null });
+    expect(b.loyalty).toBe('Neutral');
+    expectPlayFor0(g);
+  });
+
+  it('Promotion Season — Honor Commitments with no promises: no prompt, logged fallback', () => {
+    const promo = buildEventDeck('full').find((c) => c.templateId === 'promotion-season')!;
+    const g = round2With(promo);
+    g.dispatch({ type: 'eventChoice', player: 0, optionId: 'A' });
+    expect(g.state.pending).toMatchObject({ kind: 'eventChoice', player: 1 });
+    drive(g, (cs) => cs[0], () => 'A');
+    expect(g.state.log.some((l) => l.text.includes(`nobody in ${own(g, 0).name} holds a promise`))).toBe(true);
+    expect(g.state.lastEventResult!.perPlayer[0].changes).toEqual([{ kind: 'text', text: `No promised employees in ${own(g, 0).name}: nothing to honour` }]);
+    expectPlayFor0(g);
+  });
+
+  it('Promotion Season — Open Competition: any of the 4 can be picked and gains a state', () => {
+    const promo = buildEventDeck('full').find((c) => c.templateId === 'promotion-season')!;
+    const g = round2With(promo);
+    g.dispatch({ type: 'eventChoice', player: 0, optionId: 'B' });
+    const pd = g.state.pending;
+    expect(pd).toMatchObject({ kind: 'eventTarget', player: 0, choose: 'employee', candidates: own(g, 0).employeeIds });
+    const pickId = own(g, 0).employeeIds[3];
+    g.dispatch({ type: 'eventTarget', player: 0, targetId: pickId });
+    drive(g, (cs) => cs[0], () => 'B');
+    expect(E(g.state, pickId).loyalty).toBe('Favorable');
+    expectPlayFor0(g);
+  });
+});
+
+describe('event outcome for the UI (D41)', () => {
+  it('records votes, outcome and every player\'s changes, kept until the next event', () => {
+    const g = round2With(gEvent('majority',
+      { effects: [{ kind: 'influence', delta: 1 }, { kind: 'loyalty', target: 'all', delta: 1 }], minorityEffects: [{ kind: 'loyalty', target: 'random', delta: -1 }] },
+      { effects: [{ kind: 'protectDept', rounds: 1 }] }));
+    own(g, 2).protectedUntilRound = 5; // P2's minority hit is blocked
+    drive(g, (c) => c[0], (pid) => (pid === 2 ? 'B' : 'A'));
+    const r = g.view(1).lastEventResult!;
+    expect(r).toMatchObject({ title: 'Test Global', type: 'Global', outcome: { optionId: 'A', label: 'Alpha' } });
+    expect(r.votes).toEqual([{ player: 0, optionId: 'A', optionLabel: 'Alpha' }, { player: 1, optionId: 'A', optionLabel: 'Alpha' }, { player: 2, optionId: 'B', optionLabel: 'Beta' }]);
+    expect(r.perPlayer.map((p) => [p.player, p.deptId, p.minority])).toEqual([[0, own(g, 0).id, false], [1, own(g, 1).id, false], [2, own(g, 2).id, true]]);
+    expect(r.perPlayer[0].changes[0]).toEqual({ kind: 'influence', delta: 1 });
+    expect(r.perPlayer[0].changes.filter((c) => c.kind === 'loyalty')).toHaveLength(4);
+    expect(r.perPlayer[2].changes).toContainEqual({ kind: 'text', text: `Protected: no effect on ${own(g, 2).name}` });
+    expect(r.actionCount).toBe(g.state.actionCount);
+    expect(g.view(0).activeEvent).toBeNull();
+    done(g); // P1's turn: no event in the deck → the old result stays
+    expect(g.view(0).lastEventResult!.eventId).toBe(r.eventId);
+  });
+
+  it('records "nothing happened" as an empty list, and Local outcome = the chosen option', () => {
+    const g = round2With({ ...gEvent('individual'), type: 'Local', resolution: undefined });
+    drive(g);
+    const r = g.state.lastEventResult!;
+    expect(r.outcome).toMatchObject({ optionId: 'A' });
+    expect(r.perPlayer).toEqual([{ player: 0, deptId: own(g, 0).id, minority: false, changes: [] }]);
+  });
+
+  it('reveals: trait only for the revealer until disclosed publicly; intel newest first with dept', () => {
+    const g = round2With({ id: 'rv#9', templateId: 'rv', type: 'Reveal', title: 'Reveal', situation: '', options: [] });
+    const pd = g.state.pending;
+    if (pd.kind !== 'revealChoice') throw new Error('expected reveal');
+    g.state.players[0].intel.push({ employeeId: g.state.employees[0].id, trait: g.state.employees[0].hiddenTrait2, weight: 0 });
+    g.dispatch({ type: 'revealChoice', player: 0, mode: 'private' });
+    const mine = g.view(0).lastEventResult!.perPlayer[0].changes[0];
+    const theirs = g.view(1).lastEventResult!.perPlayer[0].changes[0];
+    expect(mine).toEqual({ kind: 'reveal', employeeId: pd.employeeId, by: 0, public: false, trait: pd.trait, weight: pd.weight });
+    expect(theirs).toEqual({ kind: 'reveal', employeeId: pd.employeeId, by: 0, public: false });
+    const e = E(g.state, pd.employeeId);
+    expect(g.state.log.at(-2)).toMatchObject({ visibility: 0, tag: 'reveal', text: expect.stringMatching(new RegExp(`^You now know: ${e.name} \\(`)) });
+    expect(g.state.log.at(-1)!.text).not.toContain(e.name);
+    const intel = g.view(0).players[0].intel!;
+    expect(intel[0]).toMatchObject({ employeeId: pd.employeeId, deptId: e.deptId });
+    expect(intel[1].employeeId).toBe(g.state.employees[0].id);
+
+    const h = round2With({ id: 'rv#8', templateId: 'rv', type: 'Reveal', title: 'Reveal', situation: '', options: [] });
+    const q = h.state.pending;
+    if (q.kind !== 'revealChoice') throw new Error('expected reveal');
+    h.dispatch({ type: 'revealChoice', player: 0, mode: 'public' });
+    expect(h.view(2).lastEventResult!.perPlayer[0].changes[0]).toMatchObject({ public: true, trait: q.trait });
+    expect(h.state.log.some((l) => l.visibility === 'public' && l.text.startsWith(`P0 disclosed publicly: ${E(h.state, q.employeeId).name}`))).toBe(true);
+  });
+
+  it('exposes turn info, department lead names and affected departments', () => {
+    const g = round2With(gEvent('majority'));
+    const v = g.view(0);
+    expect(v.turn.eventCardId).toBe(g.state.activeEvent!.card.id);
+    expect(v.departments.find((d) => d.id === own(g, 1).id)!.leadName).toBe('P1');
+    expect(v.departments.find((d) => d.id === neutral(g).id)!.leadName).toBeNull();
+    for (const pid of [0, 1, 2]) g.dispatch({ type: 'eventChoice', player: pid, optionId: 'A' });
+    // event done; affected = each player's dept (checked on the stored result)
+    expect(g.state.lastEventResult!.perPlayer.map((p) => p.deptId)).toEqual([0, 1, 2].map((pid) => own(g, pid).id));
+    const h = round2With({ ...gEvent('individual', { chooseEmployee: true, effects: [] }), type: 'Local', resolution: undefined });
+    expect(h.view(1).activeEvent!.affectedDeptIds).toEqual([own(h, 0).id]);
+    const k = round2With(gEvent('individual', { chooseEmployee: true, effects: [] }));
+    k.dispatch({ type: 'eventChoice', player: 0, optionId: 'A' });
+    expect(k.view(2).activeEvent!.affectedDeptIds).toEqual([own(k, 0).id]);
+  });
+});
 
 // ---------------------------------------------------------------- save / trade
 describe('save cards and trading (§34, D13)', () => {
@@ -633,8 +944,7 @@ describe('determinism (D2)', () => {
         else if (pd.kind === 'accusation') a = { type: 'accuse', player: pd.player, accused: (pd.player + 1) % 4 };
         else if (pd.kind === 'play') {
           const p = g.state.players[pd.player];
-          if (!pd.focus) a = { type: 'focus', player: pd.player, focus: step % 3 ? 'Expand' : 'Manage' };
-          else {
+          {
             const c = p.hand.find((x) => g.legalTargets(p.id, x.id).length);
             a = c ? { type: 'playCard', player: p.id, cardId: c.id, targetId: g.legalTargets(p.id, c.id)[0] } : { type: 'donePlaying', player: p.id };
           }

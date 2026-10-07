@@ -6,7 +6,7 @@ import {
   ceoThreshold, influenceMaxFor, rankFor,
 } from './types';
 import type {
-  Department, DeptId, Employee, EmployeeId, EventEffect, EffectTarget, Explanation, GameState as S,
+  Department, DeptId, Employee, EmployeeId, EventChange, EventEffect, EffectTarget, Explanation, GameState as S,
   InfluenceCard, LoyaltyState, Pending, Player, PlayerId, Rank, ScoreBreakdown, TraitPole, TurnSummary,
 } from './types';
 
@@ -67,6 +67,10 @@ export function revealPrompt(s: S, pid: PlayerId, pool: Employee[]): Pending | n
   return { kind: 'revealChoice', player: pid, employeeId: e.id,
     trait: slot === 1 ? e.hiddenTrait1 : e.hiddenTrait2, weight: slot === 1 ? 2 : 0 };
 }
+
+/** Event-result record for a reveal prompt; `public` is settled when the prompt is answered (D41). */
+export const revealChange = (q: Extract<Pending, { kind: 'revealChoice' }>): EventChange =>
+  ({ kind: 'reveal', employeeId: q.employeeId, by: q.player, public: false, trait: q.trait, weight: q.weight });
 
 // ---------------------------------------------------------------- turn summary (§67)
 export function newSummary(pid: PlayerId): TurnSummary {
@@ -138,7 +142,7 @@ function becameRebel(s: S, e: Employee, actor: PlayerId | null, credit: PlayerId
   }
   if (credit !== null && !s.players[credit].eliminated) s.players[credit].stats.rebelsCreated++;
   s.turnSummary?.newRebels.push(e.id);
-  log(s, `${e.name} has turned Rebel.`, 'public', 'rebel');
+  log(s, `${e.name} (${D(s, e.deptId).name}) has turned Rebel.`, 'public', 'rebel');
   if (e.rebelInclination !== null) log(s, `${e.name}'s rebellion leans toward you.`, e.rebelInclination, 'rebel');
 }
 
@@ -246,7 +250,7 @@ function eliminate(s: S, p: Player) {
   s.influenceDiscard.push(...p.hand, ...p.reserve);
   p.hand = [];
   p.reserve = [];
-  log(s, `${p.name} has no department left and is eliminated.`, 'public', 'elimination'); // D18
+  log(s, `${p.name} has no department left and is eliminated.`, 'public', 'capture'); // D18
 }
 
 const RANKS: Rank[] = ['TeamLead', 'Manager', 'AVP', 'VP', 'CEO'];
@@ -332,7 +336,7 @@ export function endGame(s: S, winner: PlayerId | null) {
   s.phase = 'gameOver';
   s.pending = { kind: 'gameOver' };
   s.interrupts = [];
-  log(s, `${s.players[winner].name} becomes CEO!`, 'public', 'gameOver');
+  log(s, `${s.players[winner].name} becomes CEO!`, 'public', 'promotion');
 }
 
 // ---------------------------------------------------------------- cards (§30–§44)
@@ -349,24 +353,27 @@ export function draw(s: S, p: Player, n: number) {
 export const spendFor = (c: InfluenceCard, e: Employee) =>
   Math.max(c.cost, (c.direction === 'negative' && e.loyalty === 'Loyal') || (c.direction === 'positive' && e.loyalty === 'Rebel') ? 2 : 0);
 
+/** D42 (coordinator's assumption): positive cards may also target Neutral departments so they stay capturable. */
+export const POSITIVE_CARDS_ALLOW_NEUTRAL = true;
+
 export type PlayCheck = { error: string } | { card: InfluenceCard; e: Employee; spend: number };
 
-/** Full playCard validation (no mutation). requireFocus=false lets legalTargets work before focus is picked. */
-export function checkPlay(s: S, pid: PlayerId, cardId: string, targetId: string, requireFocus: boolean): PlayCheck {
+/** Full playCard validation (no mutation). Legal targets come from the card's mode alone (D37). */
+export function checkPlay(s: S, pid: PlayerId, cardId: string, targetId: string): PlayCheck {
   const pd = s.pending;
   if (pd.kind !== 'play' || pd.player !== pid) return { error: 'Not your play phase' };
   const p = s.players[pid];
   const card = p.hand.find((c) => c.id === cardId) ?? p.reserve.find((c) => c.id === cardId);
   if (!card) return { error: 'Card not in your hand or reserve' };
-  if (requireFocus && !s.focus) return { error: 'Choose Manage or Expand first' };
-  if (s.focus && card.mode === 'Internal' && s.focus !== 'Manage') return { error: 'Internal cards can only be played when Managing' };
-  if (s.focus && card.mode === 'External' && s.focus !== 'Expand') return { error: 'External cards can only be played when Expanding' };
   const e = s.employees.find((x) => x.id === targetId);
   if (!e) return { error: 'Unknown employee' };
-  const own = D(s, e.deptId).teamLead === pid;
-  const focus = s.focus ?? (card.mode === 'Internal' ? 'Manage' : card.mode === 'External' ? 'Expand' : own ? 'Manage' : 'Expand');
-  if (focus === 'Manage' && !own) return { error: 'Manage: target must be in your own department' };
-  if (focus === 'Expand' && own) return { error: 'Expand: target must be outside your departments' };
+  // D42: legality by card DIRECTION (card.mode no longer matters).
+  const lead = D(s, e.deptId).teamLead;
+  if (card.direction === 'positive' && lead !== pid && !(lead === null && POSITIVE_CARDS_ALLOW_NEUTRAL)) {
+    return { error: 'Positive cards work on your own team' };
+  }
+  if (card.direction === 'negative' && lead === pid) return { error: 'Hostile cards target other teams' };
+  if (card.direction === 'mole' && (lead === null || lead === pid)) return { error: 'Moles are planted in other players\' teams' };
   if (p.targetedThisTurn.includes(e.id)) return { error: 'You already targeted this employee this turn' }; // §13
   if (card.direction === 'positive') {
     if (e.loyalty === 'Loyal') return { error: `${e.name} is already Loyal` };
@@ -399,7 +406,7 @@ export function resolvePlay(s: S, pid: PlayerId, card: InfluenceCard, e: Employe
 
   if (card.direction === 'mole') {
     // §57: only the creator learns anything; the table just sees a face-down play.
-    log(s, `${p.name} played a card face-down.`);
+    log(s, `${p.name} played a card face-down.`, 'public', 'card');
     if (e.mole) {
       log(s, `Your mole on ${e.name} failed to take hold — someone got there first.`, pid, 'mole');
       ts?.moleActivity.push(`Mole on ${e.name} failed`);
@@ -453,26 +460,54 @@ export function resolvePlay(s: S, pid: PlayerId, card: InfluenceCard, e: Employe
     backfire(s, p, card, e, dir);
   }
 
-  const ex: Explanation = { cardName: card.name, targetName: e.name, lines, hiddenTraitAffected: hidden, score, band, from, to: e.loyalty };
+  const to = e.loyalty;
+  const explanation: Explanation = { cardName: card.name, targetName: e.name, lines, hiddenTraitAffected: hidden, score, band, from, to };
+  // D30/D40: everyone else sees a Blocked play as an ordinary Failure.
   const shown = band === 'Blocked' ? 'Failure' : band;
-  const moved = from !== e.loyalty ? ` (${from} → ${e.loyalty})` : '';
-  log(s, `${p.name} played ${card.name} on ${e.name}: ${shown}${moved}.`);
-  log(s, explain(ex), pid, 'explanation');
+  const publicReaction = reaction(s, e, card.direction, shown);
+  const status = from !== to ? `Status changed from ${from} to ${to}.` : `Status unchanged (${to}).`;
+  log(s, `${p.name} used ${card.name} on ${e.name} of ${D(s, e.deptId).name}. ${publicReaction} ${status}`, 'public', 'card');
+  s.lastCardResult = { actor: pid, cardName: card.name, employeeId: e.id, deptId: e.deptId, band, from, to,
+    reaction: band === 'Blocked' ? reaction(s, e, card.direction, band) : publicReaction, explanation,
+    actionCount: s.actionCount + 1, publicReaction }; // +1: dispatch bumps actionCount after this action
   settle(s);
 }
 
-/** §89 explanation, only known information. */
-export function explain(x: Explanation): string {
-  const parts = x.lines.map((l) => `${l.label} ${l.value >= 0 ? '+' : ''}${l.value}`).join(', ');
-  const res = x.band === 'Blocked' ? 'no effect' : x.band;
-  return `${x.cardName} on ${x.targetName}: ${parts} = ${x.score} → ${res} (${x.from} → ${x.to}).` +
-    (x.hiddenTraitAffected ? ' A hidden trait affected this decision.' : '');
+// ---------------------------------------------------------------- narrative reactions (D40)
+// {S}/{s} subject, {o} object, {p} possessive. Past tense only so 'they' reads fine too.
+const REACTIONS: Record<'posWin' | 'posFail' | 'negWin' | 'negFail' | 'blocked', string[]> = {
+  posWin: ['{S} liked the effort.', '{S} appreciated you taking a stand.', '{S} felt seen.', '{S} warmed up to you.',
+    '{S} lit up at the recognition.', 'That one landed: {s} noticed.', '{S} mentioned it to the whole team.', '{S} quietly decided you were alright.'],
+  posFail: ['{S} didn\'t buy it.', '{S} shrugged it off.', '{S} smiled politely and moved on.', 'It came across as a bit much to {o}.',
+    '{S} wondered what you wanted in return.', '{S} barely looked up from {p} screen.', 'The gesture went unnoticed.'],
+  negWin: ['{S} started doubting {p} lead.', '{S} took it personally.', '{S} began updating {p} CV.', 'The rumour got under {p} skin.',
+    '{S} stopped speaking up in meetings.', '{S} felt the ground shift.', 'Trust cracked a little.'],
+  negFail: ['It didn\'t land: {s} saw through it.', '{S} laughed it off.', '{S} wasn\'t having any of it.', 'The whisper died at {p} desk.',
+    '{S} asked around and found nothing.', '{S} shrugged: office noise.'],
+  blocked: ['Somehow it had no effect.', 'Oddly, nothing changed.', 'It vanished without a trace.', 'Somebody seems to have got there first.',
+    'Strangely, it went nowhere.', 'It was as if it never happened.'],
+};
+const PRONOUNS = { she: ['she', 'her', 'her'], he: ['he', 'him', 'his'], they: ['they', 'them', 'their'] } as const;
+
+function hash(str: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+/** Deterministic in-world reaction from direction + band + permanent trait; varies by employee and round. Uses no rng. */
+export function reaction(s: S, e: Employee, dir: InfluenceCard['direction'], band: Explanation['band']): string {
+  const key = band === 'Blocked' ? 'blocked' : `${dir === 'positive' ? 'pos' : 'neg'}${band === 'Failure' ? 'Fail' : 'Win'}` as const;
+  const list = REACTIONS[key];
+  const [sub, obj, pos] = PRONOUNS[e.pronoun ?? 'they'];
+  return list[hash(`${e.id}|${s.round}|${e.permanentTrait}`) % list.length]
+    .replace('{S}', sub[0].toUpperCase() + sub.slice(1)).replace('{s}', sub).replace('{o}', obj).replace('{p}', pos);
 }
 
 function makePromise(s: S, pid: PlayerId, e: Employee) {
   e.promise = { byPlayer: pid, expiresRound: s.round + PROMISE_ROUNDS }; // §52 / D22
   summaryFor(s, pid)?.promisesCreated.push(e.id);
-  log(s, `${s.players[pid].name} promised ${e.name} a promotion.`);
+  log(s, `${s.players[pid].name} promised ${e.name} (${D(s, e.deptId).name}) a promotion.`, 'public', 'card');
 }
 
 /** Another employee in the same dept that can legally move in `dir`. */
@@ -488,7 +523,7 @@ function secondary(s: S, p: Player, card: InfluenceCard, e: Employee, dir: 1 | -
     case 'ripple': {
       const o = rippleTarget(s, e, dir, p.id);
       const from = o?.loyalty;
-      if (o && move(s, o, dir, { actor: p.id })) log(s, `Ripple: ${o.name} ${from} → ${o.loyalty}.`);
+      if (o && move(s, o, dir, { actor: p.id })) log(s, `Ripple: ${o.name} (${D(s, o.deptId).name}) ${from} → ${o.loyalty}.`, 'public', 'card');
       break;
     }
     case 'refund': p.influence += 1; break;
@@ -498,7 +533,7 @@ function secondary(s: S, p: Player, card: InfluenceCard, e: Employee, dir: 1 | -
       const slot = pick(s.rng, sl);
       const trait = slot === 1 ? e.hiddenTrait1 : e.hiddenTrait2;
       p.intel.push({ employeeId: e.id, trait, weight: slot === 1 ? 2 : 0 });
-      log(s, `Intel: ${e.name} is ${TRAIT_LABEL[trait]} (${slot === 1 ? '+2' : '0'}).`, p.id, 'reveal');
+      log(s, `You now know: ${e.name} (${D(s, e.deptId).name}) is ${TRAIT_LABEL[trait]} (${slot === 1 ? '+2' : '0'}).`, p.id, 'reveal');
       break;
     }
     case 'draw': draw(s, p, 1); break;
@@ -511,22 +546,22 @@ function backfire(s: S, p: Player, card: InfluenceCard, e: Employee, dir: 1 | -1
   switch (card.backfire) {
     case 'reverse': {
       const from = e.loyalty;
-      if (move(s, e, (-dir) as 1 | -1, { actor: null, credit: null })) log(s, `Backfire: ${e.name} ${from} → ${e.loyalty}.`);
+      if (move(s, e, (-dir) as 1 | -1, { actor: null, credit: null })) log(s, `Backfire: ${e.name} (${D(s, e.deptId).name}) ${from} → ${e.loyalty}.`, 'public', 'card');
       break;
     }
     case 'ripple': {
       const o = rippleTarget(s, e, (-dir) as 1 | -1, null);
       const from = o?.loyalty;
-      if (o && move(s, o, (-dir) as 1 | -1, { actor: null, credit: null })) log(s, `Backfire: ${o.name} ${from} → ${o.loyalty}.`);
+      if (o && move(s, o, (-dir) as 1 | -1, { actor: null, credit: null })) log(s, `Backfire: ${o.name} (${D(s, o.deptId).name}) ${from} → ${o.loyalty}.`, 'public', 'card');
       break;
     }
     case 'loseInfluence': p.influence = Math.max(0, p.influence - 1); break;
-    case 'exposeSelf': log(s, `${e.name} (${TRAIT_LABEL[e.permanentTrait]}) openly resents ${p.name}'s ${card.name}.`); break;
+    case 'exposeSelf': log(s, `${e.name} (${TRAIT_LABEL[e.permanentTrait]}) openly resents ${p.name}'s ${card.name}.`, 'public', 'card'); break;
     default: break;
   }
 }
 
-// ---------------------------------------------------------------- event effects (§45–§52, D6, D8)
+// ---------------------------------------------------------------- event effects (§45–§52, D6, D8, D41)
 export const isNegative = (fx: EventEffect) =>
   (fx.kind === 'loyalty' && fx.delta < 0) || (fx.kind === 'influence' && fx.delta < 0) || (fx.kind === 'severity' && fx.delta > 0) ||
   fx.kind === 'makeRebel' || fx.kind === 'rebelPressure' || fx.kind === 'breakPromises';
@@ -549,26 +584,38 @@ function targets(s: S, d: Department, t: EffectTarget, chosen: EmployeeId | null
   }
 }
 
-function protectedFrom(s: S, d: Department): boolean {
+/** Where an event's effects are logged and recorded (D41). `prefix` e.g. "Missed Deadline in Finance — Sahib chose Blame". */
+export interface EffectCtx { prefix: string; changes: EventChange[] }
+
+function protectedFrom(s: S, d: Department, cx: EffectCtx): boolean {
   if (s.round >= d.protectedUntilRound) return false;
-  log(s, `${d.name} is protected: a negative effect was blocked.`, 'public', 'event');
+  log(s, `${cx.prefix}: ${d.name} is protected, a negative effect was blocked.`, 'public', 'event');
+  cx.changes.push({ kind: 'text', text: `Protected: no effect on ${d.name}` });
   return true;
 }
 
-function evMove(s: S, e: Employee, dir: 1 | -1, o: MoveOpts) {
+function evMove(s: S, e: Employee, dir: 1 | -1, o: MoveOpts, cx: EffectCtx, tag = 'event') {
   const from = e.loyalty;
-  if (move(s, e, dir, o)) log(s, `${e.name}: ${from} → ${e.loyalty}.`, 'public', 'event');
+  if (!move(s, e, dir, o)) return;
+  log(s, `${cx.prefix}: ${e.name} (${from} → ${e.loyalty}).`, 'public', tag);
+  cx.changes.push({ kind: 'loyalty', employeeId: e.id, from, to: e.loyalty });
+}
+
+/** Influence change: the active player's pool, or the bank when it is not their turn (D25, D39). */
+export function addInfluence(s: S, p: Player, delta: number) {
+  if (p.id === s.currentPlayer) p.influence = Math.max(0, p.influence + delta);
+  else p.influenceBank = Math.max(0, (p.influenceBank ?? 0) + delta);
 }
 
 /** Apply one player's event effects to department d. `credit` = player who chose this (D23 rebelsCreated). */
 export function applyEffects(s: S, pid: PlayerId, effects: EventEffect[], d: Department, chosen: EmployeeId | null,
-  local: boolean, credit: PlayerId | null) {
+  local: boolean, credit: PlayerId | null, cx: EffectCtx) {
   const p = s.players[pid];
   for (const fx of effects) {
     if (s.phase === 'gameOver' || p.eliminated) return;
     switch (fx.kind) {
       case 'loyalty': {
-        if (fx.delta < 0 && protectedFrom(s, d)) break;
+        if (fx.delta < 0 && protectedFrom(s, d, cx)) break;
         const ts = targets(s, d, fx.target, chosen, fx.traits);
         if (fx.delta < 0) {
           // D8: Unstable dept and accumulated severity each add an extra random non-rebel target.
@@ -577,66 +624,98 @@ export function applyEffects(s: S, pid: PlayerId, effects: EventEffect[], d: Dep
           const pool = shuffle(s.rng, d.employeeIds.filter((id) => !ts.includes(id) && E(s, id).loyalty !== 'Rebel'));
           ts.push(...pool.slice(0, extra));
         }
-        for (const id of ts) evMove(s, E(s, id), fx.delta, fx.delta > 0 ? { actor: pid } : { actor: null, credit });
+        for (const id of ts) evMove(s, E(s, id), fx.delta, fx.delta > 0 ? { actor: pid } : { actor: null, credit }, cx);
         break;
       }
-      case 'influence': p.influence = Math.max(0, p.influence + fx.delta); break;
-      case 'draw': draw(s, p, fx.count); break;
+      case 'influence':
+        addInfluence(s, p, fx.delta);
+        cx.changes.push({ kind: 'influence', delta: fx.delta });
+        break;
+      case 'draw':
+        draw(s, p, fx.count);
+        cx.changes.push({ kind: 'text', text: `${p.name} draws ${fx.count} extra card${fx.count === 1 ? '' : 's'}` });
+        break;
       case 'protectDept':
         d.protectedUntilRound = Math.max(d.protectedUntilRound, s.round + fx.rounds);
-        log(s, `${d.name} is protected from negative events until round ${d.protectedUntilRound}.`, 'public', 'event');
+        log(s, `${cx.prefix}: ${d.name} is protected from negative events until round ${d.protectedUntilRound}.`, 'public', 'event');
+        cx.changes.push({ kind: 'protected', deptId: d.id, untilRound: d.protectedUntilRound });
         break;
-      case 'severity': p.severity = Math.max(0, p.severity + fx.delta); break;
+      case 'severity':
+        p.severity = Math.max(0, p.severity + fx.delta);
+        cx.changes.push({ kind: 'severity', delta: fx.delta });
+        break;
       case 'reveal': {
         const [t] = targets(s, d, fx.target, chosen);
         const first = t ? [E(s, t)] : [];
         const q = revealPrompt(s, pid, first) ?? revealPrompt(s, pid, d.employeeIds.map((id) => E(s, id)));
-        if (q) s.interrupts!.push(q);
+        if (q?.kind === 'revealChoice') { s.interrupts!.push(q); cx.changes.push(revealChange(q)); }
         break;
       }
-      case 'investigate': investigate(s, pid, d); break;
+      case 'investigate': investigate(s, pid, d, cx); break;
       case 'honorPromise': {
-        for (const id of targets(s, d, 'promised', null)) {
+        const promised = targets(s, d, 'promised', null);
+        if (!promised.length) {
+          log(s, `${cx.prefix}: nobody in ${d.name} holds a promise, so there is nothing to honour.`, 'public', 'event');
+          cx.changes.push({ kind: 'text', text: `No promised employees in ${d.name}: nothing to honour` });
+        }
+        for (const id of promised) {
           const e = E(s, id);
-          if (id !== chosen && protectedFrom(s, d)) continue;
+          if (id !== chosen && protectedFrom(s, d, cx)) continue;
           e.promise = null;
           s.turnSummary?.promisesResolved.push(id);
-          evMove(s, e, id === chosen ? 1 : -1, id === chosen ? { actor: pid } : { actor: null, credit });
+          cx.changes.push({ kind: 'promise', employeeId: id, honored: id === chosen });
+          evMove(s, e, id === chosen ? 1 : -1, id === chosen ? { actor: pid } : { actor: null, credit }, cx);
         }
         break;
       }
       case 'breakPromises': {
-        if (protectedFrom(s, d)) break;
+        if (protectedFrom(s, d, cx)) break;
         const promised = targets(s, d, 'promised', null);
-        for (const id of promised) { E(s, id).promise = null; s.turnSummary?.promisesResolved.push(id); }
+        for (const id of promised) {
+          E(s, id).promise = null;
+          s.turnSummary?.promisesResolved.push(id);
+          cx.changes.push({ kind: 'promise', employeeId: id, honored: false });
+        }
         const hit = promised.length ? promised : targets(s, d, 'randomWithTrait', null, ['Ambitious', 'CreditHungry']);
-        for (const id of hit) evMove(s, E(s, id), -1, { actor: null, credit });
+        for (const id of hit) evMove(s, E(s, id), -1, { actor: null, credit }, cx);
         break;
       }
       case 'rebelPressure':
-        if (protectedFrom(s, d)) break;
+        if (protectedFrom(s, d, cx)) break;
         if (d.teamLead !== null && rebelCount(s, d) === 2) { // §43: temporary +1 → crisis
-          log(s, `Rebel pressure boils over in ${d.name}.`, 'public', 'event');
+          log(s, `${cx.prefix}: rebel pressure boils over in ${d.name}.`, 'public', 'event');
+          cx.changes.push({ kind: 'text', text: `Rebel pressure boils over in ${d.name}` });
           crisis(s, d);
-        }
+        } else cx.changes.push({ kind: 'text', text: `Rebel pressure check in ${d.name}: the team holds` });
         break;
       case 'makeRebel': {
-        if (protectedFrom(s, d)) break;
-        for (const id of targets(s, d, fx.target, chosen)) forceRebel(s, E(s, id), credit);
+        if (protectedFrom(s, d, cx)) break;
+        for (const id of targets(s, d, fx.target, chosen)) {
+          const e = E(s, id);
+          if (e.loyalty === 'Rebel') continue;
+          const from = e.loyalty;
+          log(s, `${cx.prefix}: ${e.name} (${from} → Rebel).`, 'public', 'event');
+          forceRebel(s, e, credit);
+          cx.changes.push({ kind: 'loyalty', employeeId: id, from, to: 'Rebel' }, { kind: 'rebel', employeeId: id });
+        }
         break;
       }
-      case 'actionBonus': p.actionBonus += fx.delta; break;
+      case 'actionBonus':
+        p.actionBonus += fx.delta;
+        cx.changes.push({ kind: 'text', text: `${p.name}'s next card this turn gets ${fx.delta > 0 ? '+' : ''}${fx.delta}` });
+        break;
     }
     settle(s);
   }
 }
 
 /** D6: expose one active unexposed mole in d → accusation (§44); otherwise reveal a trait instead. */
-function investigate(s: S, pid: PlayerId, d: Department) {
+function investigate(s: S, pid: PlayerId, d: Department, cx: EffectCtx) {
   const moled = d.employeeIds.map((id) => E(s, id)).filter((e) => e.mole && !e.mole.exposed);
+  cx.changes.push({ kind: 'investigate', found: moled.length > 0 });
   if (!moled.length) {
     const q = revealPrompt(s, pid, d.employeeIds.map((id) => E(s, id)));
-    if (q) s.interrupts!.push(q);
+    if (q?.kind === 'revealChoice') { s.interrupts!.push(q); cx.changes.push(revealChange(q)); }
     return;
   }
   const e = pick(s.rng, moled);
@@ -661,7 +740,7 @@ export function instability(s: S, p: Player) {
   const ts = summaryFor(s, p.id);
   if (ts) ts.managementPenalty = true;
   const hit = shuffle(s.rng, d.employeeIds.filter((id) => E(s, id).loyalty !== 'Rebel')).slice(0, 2);
-  for (const id of hit) evMove(s, E(s, id), -1, { actor: null, credit: null });
+  const cx: EffectCtx = { prefix: `Internal Instability in ${d.name}`, changes: [] };
+  for (const id of hit) evMove(s, E(s, id), -1, { actor: null, credit: null }, cx, 'instability');
   settle(s);
 }
-

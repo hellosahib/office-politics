@@ -6,12 +6,12 @@ import {
   DEFAULT_PLAYER_NAMES, HAND_SIZE, MAX_RESERVE, PLAYER_COLORS, RANK_BONUS, TRAIT_DIMENSIONS, TRAIT_LABEL, dimensionOf,
 } from './types';
 import type {
-  Action, ActionResult, ActiveEvent, CardId, Employee, EmployeeId, EventOption, GameConfig, GameState as S, GameView,
-  Pending, Player, PlayerId, Prediction, TraitDimension,
+  Action, ActionResult, ActiveEvent, CardId, Employee, EmployeeId, EventOption, EventPlayerResult, GameConfig, GameState as S,
+  GameView, Pending, Player, PlayerId, Prediction, TraitDimension,
 } from './types';
 import {
-  D, E, alive, applyEffects, checkPlay, deptsOf, draw, endGame, influenceMax, instability, isNegative, knows, log,
-  managementCost, maxRounds, move, newSummary, resolvePlay, revealPrompt, settle, spendFor, traitMod, traitsOf,
+  D, E, applyEffects, checkPlay, deptsOf, draw, endGame, influenceMax, instability, isNegative, knows, log,
+  managementCost, maxRounds, move, newSummary, resolvePlay, revealChange, revealPrompt, settle, spendFor, traitMod, traitsOf,
 } from './rules';
 import { buildView } from './view';
 
@@ -58,7 +58,7 @@ export class Game {
 
   legalTargets(player: PlayerId, cardId: CardId): EmployeeId[] {
     const s = this.state;
-    return s.employees.filter((e) => !('error' in checkPlay(s, player, cardId, e.id, false))).map((e) => e.id);
+    return s.employees.filter((e) => !('error' in checkPlay(s, player, cardId, e.id))).map((e) => e.id);
   }
 
   /** §60 forecast using only traits the player knows. */
@@ -71,7 +71,7 @@ export class Game {
       return { requiredSpend: 0, base: 0, rankBonus: 0, eventBonus: 0, traitMods: [], unknownTraitMayAffect: false,
         min: 0, max: 0, legal: false, reason: 'Unknown card or target' };
     }
-    const v = checkPlay(s, player, cardId, targetId, true);
+    const v = checkPlay(s, player, cardId, targetId);
     const known = traitsOf(e).filter((t) => knows(s, player, e, t.slot));
     const traitMods = known.map((t) => ({ trait: t.trait, value: traitMod(card, t.trait, t.w) })).filter((t) => t.value);
     const rankBonus = RANK_BONUS[p.rank];
@@ -105,7 +105,7 @@ function setup(config: GameConfig): S {
   const agendas = cfg.mode === 'Election' && !mini ? shuffle(rng, AGENDAS.map((a) => a.id)) : [];
   const players: Player[] = Array.from({ length: n }, (_, i) => ({
     id: i, name: cfg.players[i]?.name || DEFAULT_PLAYER_NAMES[i], isBot: cfg.players[i]?.isBot ?? false,
-    color: PLAYER_COLORS[i], rank: 'TeamLead', promotionPoints: 0, influence: 0, hand: [], reserve: [],
+    color: PLAYER_COLORS[i], rank: 'TeamLead', promotionPoints: 0, influence: 0, influenceBank: 0, hand: [], reserve: [],
     agenda: agendas[i] ?? null, eliminated: false, intel: [], targetedThisTurn: [], severity: 0, actionBonus: 0,
     stats: { rebelsCreated: 0, capturedNeutral: false, lostStartingDept: false, startingDept: starts[i],
       negativeEventsResolved: 0, privateReveals: 0, molesPlanted: 0, maxActiveMoles: 0, reachedVPRound: null,
@@ -117,10 +117,10 @@ function setup(config: GameConfig): S {
     pending: { kind: 'play', player: 0, focus: null }, focus: null, departments, employees, players,
     influenceDeck: shuffle(rng, buildInfluenceDeck(cfg.board)), influenceDiscard: [],
     eventDeck: shuffle(rng, buildEventDeck(cfg.board)), eventDiscard: [], activeEvent: null, log: [],
-    turnSummary: null, winner: null, scores: null, actionCount: 0, interrupts: [],
+    turnSummary: null, winner: null, scores: null, actionCount: 0, interrupts: [], turn: { number: 0, drawnThisTurn: [], eventCardId: null },
   };
   for (const p of players) draw(s, p, HAND_SIZE); // §5: 4 cards in hand at start (D26: no extra draw in round 1)
-  log(s, `New ${cfg.mode} game on the ${cfg.board} board: ${players.map((p) => `${p.name} leads ${D(s, p.stats.startingDept).name}`).join(', ')}.`);
+  log(s, `New ${cfg.mode} game on the ${cfg.board} board: ${players.map((p) => `${p.name} leads ${D(s, p.stats.startingDept).name}`).join(', ')}.`, 'public', 'turn');
   return s;
 }
 
@@ -136,25 +136,35 @@ function startTurn(s: S) {
   const p = s.players[s.currentPlayer];
   s.turnSummary = newSummary(p.id);
   s.focus = null;
-  p.influence += influenceMax(s, p); // D25: refresh before the event; off-turn gains carry in
+  // D25/D39: refresh before the event. SET to max (no carry-over) plus whatever was banked off-turn.
+  p.influence = influenceMax(s, p) + (p.influenceBank ?? 0);
+  p.influenceBank = 0;
+  s.turn = { number: (s.turn?.number ?? 0) + 1, drawnThisTurn: [], eventCardId: null };
   log(s, `Round ${s.round}: ${p.name}'s turn.`, 'public', 'turn');
   if (!s.eventDeck.length) { s.eventDeck = shuffle(s.rng, s.eventDiscard); s.eventDiscard = []; }
   const card = s.eventDeck.pop();
   if (!card) return afterEvent(s, false);
-  const ev: ActiveEvent = { card, deptId: null, votes: {}, targets: {}, remaining: [], outcome: null, queue: [] };
+  s.turn.eventCardId = card.id;
+  const ev: ActiveEvent = { card, deptId: null, votes: {}, targets: {}, remaining: [], outcome: null, queue: [], affectedDeptIds: [], results: [] };
   s.activeEvent = ev;
   log(s, `Event — ${card.title} (${card.type}): ${card.situation}`, 'public', 'event');
   if (card.type === 'Reveal') {
     const q = revealPrompt(s, p.id, s.employees); // D21
-    if (q) s.interrupts!.push(q);
-    else log(s, 'Nothing left to reveal; the event is discarded.', 'public', 'event');
+    const r: EventPlayerResult = { player: p.id, deptId: null, minority: false, changes: [] };
+    ev.results!.push(r);
+    if (q?.kind === 'revealChoice') {
+      s.interrupts!.push(q);
+      r.deptId = E(s, q.employeeId).deptId;
+      ev.affectedDeptIds.push(r.deptId);
+      r.changes.push(revealChange(q));
+    } else log(s, 'Nothing left to reveal; the event is discarded.', 'public', 'event');
   } else if (card.type === 'Local') {
     const d = pick(s.rng, deptsOf(s, p.id)); // §47
     ev.deptId = d.id;
-    ev.targets[`dept:${p.id}`] = d.id;
+    setDept(ev, p.id, d.id);
     ev.remaining = [p.id];
   } else {
-    ev.remaining = turnOrder(s, p.id); // §46 every active player votes
+    ev.remaining = turnOrder(s, p.id); // §46 every active player votes, starting with the active player
   }
   advance(s);
 }
@@ -163,11 +173,6 @@ function startTurn(s: S) {
 function turnOrder(s: S, from: PlayerId): PlayerId[] {
   const n = s.players.length;
   return Array.from({ length: n }, (_, k) => (from + k) % n).filter((id) => !s.players[id].eliminated);
-}
-function nextAlive(s: S, from: PlayerId): PlayerId | null {
-  const n = s.players.length;
-  for (let k = 1; k <= n; k++) if (!s.players[(from + k) % n].eliminated) return (from + k) % n;
-  return null;
 }
 
 /** Drive the event phase until the engine needs input. */
@@ -197,8 +202,9 @@ function interruptValid(s: S, q: Pending): boolean {
   return ok;
 }
 
+const isMajority = (ev: ActiveEvent) => ev.card.type === 'Global' && ev.card.resolution !== 'individual';
 function optionFor(ev: ActiveEvent, pid: PlayerId): { opt: EventOption; minority: boolean } {
-  const majority = ev.card.type === 'Global' && ev.card.resolution !== 'individual';
+  const majority = isMajority(ev);
   const id = majority ? ev.outcome! : ev.votes[pid];
   return { opt: ev.card.options.find((o) => o.id === id)!, minority: majority && ev.votes[pid] !== id };
 }
@@ -206,41 +212,85 @@ const effectsFor = (ev: ActiveEvent, pid: PlayerId) => {
   const { opt, minority } = optionFor(ev, pid);
   return [...opt.effects, ...(minority ? opt.minorityEffects ?? [] : [])];
 };
+function setDept(ev: ActiveEvent, pid: PlayerId, deptId: string) {
+  ev.targets[`dept:${pid}`] = deptId;
+  if (!ev.affectedDeptIds.includes(deptId)) ev.affectedDeptIds.push(deptId);
+}
 
-/** Apply one player's share of the event (or ask them for a target). */
+/**
+ * Resolve `pid`'s department / employee targets, or return the prompt that asks for them (D37 item 4).
+ * Never picks silently when a real choice exists. '' in targets = "no employee to choose".
+ */
+function targetPrompt(s: S, ev: ActiveEvent, pid: PlayerId): Pending | null {
+  if (s.players[pid].eliminated) return null;
+  const { opt } = optionFor(ev, pid);
+  let deptId = ev.targets[`dept:${pid}`];
+  if (!deptId) {
+    const owned = deptsOf(s, pid);
+    if (!owned.length) return null;
+    if (opt.chooseDept && owned.length > 1) {
+      return { kind: 'eventTarget', player: pid, eventId: ev.card.id, optionId: opt.id, choose: 'dept', candidates: owned.map((d) => d.id) };
+    }
+    deptId = owned.length === 1 ? owned[0].id : pick(s.rng, owned).id;
+    setDept(ev, pid, deptId);
+  }
+  if (!opt.chooseEmployee || `employee:${pid}` in ev.targets) return null;
+  const d = D(s, deptId);
+  const honour = opt.effects.some((fx) => fx.kind === 'honorPromise');
+  const candidates = honour ? d.employeeIds.filter((id) => E(s, id).promise) : [...d.employeeIds];
+  if (!candidates.length) { ev.targets[`employee:${pid}`] = ''; return null; } // honorPromise logs the "no promise" fallback
+  return { kind: 'eventTarget', player: pid, eventId: ev.card.id, optionId: opt.id, choose: 'employee', candidates };
+}
+
+/**
+ * One step of event resolution:
+ *  1. targets for every player whose option is known (Local / individual Global: right after their own vote,
+ *     before the next voter; majority Global: after the vote closes, seat order from the active player);
+ *  2. the next vote;
+ *  3. apply one player's effects (queue order = seat order from the active player).
+ */
 function stepEvent(s: S, ev: ActiveEvent): 'wait' | 'continue' | 'done' {
+  const queue = (ev.queue ??= []);
+  if (!isMajority(ev) || ev.outcome) {
+    for (const pid of queue) {
+      const q = targetPrompt(s, ev, pid);
+      if (q) { setPending(s, q); return 'wait'; }
+    }
+  }
   if (ev.remaining.length) {
     setPending(s, { kind: 'eventChoice', player: ev.remaining[0], eventId: ev.card.id, deptId: ev.deptId });
     return 'wait';
   }
-  const queue = ev.queue ?? [];
-  const pid = queue[0];
+  const pid = queue.shift();
   if (pid === undefined) return 'done';
-  const owned = deptsOf(s, pid);
-  if (s.players[pid].eliminated || (!owned.length && !ev.targets[`dept:${pid}`])) { queue.shift(); return 'continue'; }
-  const { opt } = optionFor(ev, pid);
-  let deptId = ev.targets[`dept:${pid}`];
-  if (!deptId) {
-    if (opt.chooseDept && owned.length > 1) {
-      setPending(s, { kind: 'eventTarget', player: pid, eventId: ev.card.id, optionId: opt.id, choose: 'dept', candidates: owned.map((d) => d.id) });
-      return 'wait';
-    }
-    deptId = ev.targets[`dept:${pid}`] = pick(s.rng, owned).id;
-  }
+  const deptId = ev.targets[`dept:${pid}`];
+  const { opt, minority } = optionFor(ev, pid);
+  const r: EventPlayerResult = { player: pid, deptId: deptId ?? null, minority, changes: [] };
+  (ev.results ??= []).push(r);
+  if (s.players[pid].eliminated || !deptId) return 'continue';
   const d = D(s, deptId);
-  const chosen = ev.targets[`employee:${pid}`] ?? null;
-  if (opt.chooseEmployee && chosen === null) {
-    setPending(s, { kind: 'eventTarget', player: pid, eventId: ev.card.id, optionId: opt.id, choose: 'employee', candidates: [...d.employeeIds] });
-    return 'wait';
-  }
-  queue.shift();
-  applyEffects(s, pid, effectsFor(ev, pid), d, chosen, ev.card.type === 'Local', ev.votes[pid] === opt.id ? pid : null);
+  const chosen = ev.targets[`employee:${pid}`] || null;
+  const who = s.players[pid].name;
+  const prefix = `${ev.card.title} in ${d.name} — ${who} ${isMajority(ev) ? `(${opt.label}${minority ? ', outvoted' : ''})` : `chose ${opt.label}`}`;
+  applyEffects(s, pid, effectsFor(ev, pid), d, chosen, ev.card.type === 'Local', ev.votes[pid] === opt.id ? pid : null,
+    { prefix, changes: r.changes });
   return 'continue';
 }
 
 function finishEvent(s: S, ev: ActiveEvent) {
   s.eventDiscard.push(ev.card);
   s.activeEvent = null;
+  const label = (id: 'A' | 'B') => ev.card.options.find((o) => o.id === id)?.label ?? id;
+  const voters = turnOrder(s, s.currentPlayer).filter((id) => ev.votes[id]);
+  const out = isMajority(ev) ? ev.outcome : ev.card.type === 'Local' ? ev.votes[s.currentPlayer] ?? null : null;
+  const outOpt = out ? ev.card.options.find((o) => o.id === out) : undefined;
+  s.lastEventResult = {
+    eventId: ev.card.id, templateId: ev.card.templateId, title: ev.card.title, type: ev.card.type, situation: ev.card.situation,
+    votes: voters.map((pid) => ({ player: pid, optionId: ev.votes[pid], optionLabel: label(ev.votes[pid]) })),
+    outcome: outOpt ? { optionId: outOpt.id, label: outOpt.label, text: outOpt.text } : null,
+    perPlayer: ev.results ?? [],
+    actionCount: s.actionCount + 1, // the action that finishes the event is counted after this runs
+  };
   // D23 Corporate Fixer: off-turn players have no management check, so a negative event counts at once.
   const neg = Object.keys(ev.votes).map(Number).filter((pid) => !s.players[pid].eliminated && effectsFor(ev, pid).some(isNegative));
   for (const pid of neg) if (pid !== s.currentPlayer) s.players[pid].stats.negativeEventsResolved++;
@@ -254,7 +304,7 @@ function afterEvent(s: S, negativeEvent: boolean) {
   const cost = managementCost(s, p.id);
   if (p.influence >= cost) {
     p.influence -= cost;
-    if (cost) log(s, `${p.name} pays ${cost} Influence in management cost.`);
+    if (cost) log(s, `${p.name} pays ${cost} Influence in management cost.`, 'public', 'turn');
   } else {
     p.influence = 0;
     instability(s, p);
@@ -262,30 +312,33 @@ function afterEvent(s: S, negativeEvent: boolean) {
   if (negativeEvent && !s.turnSummary?.managementPenalty) p.stats.negativeEventsResolved++;
   if (s.phase === 'gameOver') return;
   if (p.eliminated) return nextTurn(s);
-  if (s.round > 1) draw(s, p, HAND_SIZE); // D26: round-1 hands were dealt at setup
+  if (s.round > 1) { // D26: round-1 hands were dealt at setup
+    const before = new Set(p.hand.map((c) => c.id));
+    draw(s, p, HAND_SIZE);
+    if (s.turn) s.turn.drawnThisTurn = p.hand.filter((c) => !before.has(c.id)).map((c) => c.id);
+  }
   setPending(s, { kind: 'play', player: p.id, focus: null });
 }
 
-/** Phase 10 → next alive player; on wrap start a new round (§54, D22). */
+/** Phase 10 → next alive seat; plain round-robin, a round ends after the last alive seat (D38). */
 function nextTurn(s: S) {
   const p = s.players[s.currentPlayer];
   s.influenceDiscard.push(...p.hand);
   p.hand = [];
-  p.influence = 0; // §7 unused Influence does not carry over (D25)
+  // D39: influence is left as-is (display); the next refresh SETS it, so nothing carries over.
   p.targetedThisTurn = [];
   p.actionBonus = 0;
   s.focus = null;
   if (s.phase === 'gameOver') return;
-  const n = s.players.length;
-  const dist = (x: PlayerId) => (x - s.firstPlayer + n) % n;
-  let nxt = nextAlive(s, p.id);
-  if (nxt === null) return;
-  if (dist(nxt) <= dist(p.id)) {
+  const order = turnOrder(s, 0);
+  if (!order.length) return;
+  let nxt = order.find((id) => id > p.id);
+  if (nxt === undefined) {
     s.round++;
     startRound(s);
     if (isOver(s)) return;
-    s.firstPlayer = nextAlive(s, s.firstPlayer)!; // marker rotates one alive seat
-    nxt = s.firstPlayer;
+    nxt = turnOrder(s, 0)[0];
+    s.firstPlayer = nxt;
   }
   s.currentPlayer = nxt;
   startTurn(s);
@@ -294,7 +347,7 @@ function nextTurn(s: S) {
 function startRound(s: S) {
   const max = maxRounds(s);
   if (max !== null && s.round > max) return endGame(s, null); // D22: after the final round
-  log(s, `Round ${s.round} begins.`, 'public', 'round');
+  log(s, `Round ${s.round} begins.`, 'public', 'turn');
   for (const e of s.employees) {
     if (e.mole && s.round >= e.mole.expiresRound) {
       log(s, `Your mole on ${e.name} has expired.`, e.mole.creator, 'mole');
@@ -303,8 +356,9 @@ function startRound(s: S) {
     if (e.promise && s.round >= e.promise.expiresRound) {
       // D14: an unresolved promise costs one loyalty state
       e.promise = null;
-      log(s, `${e.name}'s promotion promise expired unfulfilled.`, 'public', 'event');
+      const from = e.loyalty;
       move(s, e, -1, { actor: null, credit: null });
+      log(s, `${e.name}'s (${D(s, e.deptId).name}) promotion promise expired unfulfilled (${from} → ${e.loyalty}).`, 'public', 'event');
     }
   }
   settle(s);
@@ -322,6 +376,7 @@ function handle(s: S, a: Action): string | null {
       if (!ev.card.options.some((o) => o.id === a.optionId)) return 'Unknown option';
       ev.votes[a.player] = a.optionId;
       ev.remaining.shift();
+      (ev.queue ??= []).push(a.player); // voting order = seat order from the active player = apply order
       if (!ev.remaining.length) closeVoting(s, ev);
       advance(s);
       return null;
@@ -330,38 +385,42 @@ function handle(s: S, a: Action): string | null {
       const ev = s.activeEvent;
       if (pd.kind !== 'eventTarget' || !mine || !ev) return 'Not waiting for your event target';
       if (!pd.candidates.includes(a.targetId)) return 'Invalid target';
-      ev.targets[`${pd.choose}:${a.player}`] = a.targetId;
+      if (pd.choose === 'dept') setDept(ev, a.player, a.targetId);
+      else ev.targets[`employee:${a.player}`] = a.targetId;
       advance(s);
       return null;
     }
     case 'revealChoice': {
       if (pd.kind !== 'revealChoice' || !mine) return 'Not waiting for your reveal choice';
       const e = E(s, pd.employeeId);
+      const fact = `${e.name} (${D(s, e.deptId).name}) is ${TRAIT_LABEL[pd.trait]} (${pd.weight ? '+2' : '0'}).`;
       if (a.mode === 'private') {
-        if (p.influence < 1) return 'A private reveal costs 1 Influence'; // §29
-        p.influence--;
+        // §29 / D25: off-turn reveals are paid from the bank, not last turn's leftover display value.
+        const onTurn = a.player === s.currentPlayer;
+        if ((onTurn ? p.influence : p.influenceBank ?? 0) < 1) return 'A private reveal costs 1 Influence';
+        if (onTurn) p.influence--;
+        else p.influenceBank = (p.influenceBank ?? 0) - 1;
         p.intel.push({ employeeId: e.id, trait: pd.trait, weight: pd.weight });
         p.stats.privateReveals++;
-        log(s, `Intel: ${e.name} is ${TRAIT_LABEL[pd.trait]} (${pd.weight ? '+2' : '0'}).`, p.id, 'reveal');
-        log(s, `${p.name} kept a revealed trait about ${e.name} private.`, 'public', 'reveal');
+        log(s, `You now know: ${fact}`, p.id, 'reveal');
+        log(s, `${p.name} kept a discovery private.`, 'public', 'reveal'); // no employee named: the reveal stays secret
       } else {
         if (pd.weight === 2) e.hiddenTrait1Revealed = true;
         else e.hiddenTrait2Revealed = true;
-        log(s, `Revealed: ${e.name} is ${TRAIT_LABEL[pd.trait]} (${pd.weight ? '+2' : '0'}).`, 'public', 'reveal');
+        log(s, `${p.name} disclosed publicly: ${fact}`, 'public', 'reveal');
       }
+      // D41: settle the matching event-result record
+      const rec = s.activeEvent?.results?.flatMap((r) => r.changes)
+        .find((c) => c.kind === 'reveal' && c.by === a.player && c.employeeId === e.id && c.trait === pd.trait);
+      if (rec?.kind === 'reveal') rec.public = a.mode === 'public';
       advance(s);
       return null;
     }
-    case 'focus': {
-      if (pd.kind !== 'play' || !mine) return 'Not your play phase';
-      if (s.focus && p.targetedThisTurn.length) return 'Focus is locked once a card has been played';
-      s.focus = a.focus;
-      setPending(s, { kind: 'play', player: a.player, focus: a.focus });
-      log(s, `${p.name} chose to ${a.focus}.`);
-      return null;
-    }
+    case 'focus':
+      return null; // D37: turn focus no longer exists; kept as an accepted no-op so old action logs still replay
+
     case 'playCard': {
-      const v = checkPlay(s, a.player, a.cardId, a.targetId, true);
+      const v = checkPlay(s, a.player, a.cardId, a.targetId);
       if ('error' in v) return v.error;
       resolvePlay(s, a.player, v.card, v.e, v.spend);
       if (s.phase !== 'gameOver' && p.eliminated) nextTurn(s); // knocked themselves out
@@ -400,7 +459,7 @@ function handle(s: S, a: Action): string | null {
       if (to.reserve.length >= MAX_RESERVE) return `${to.name}'s reserve is full`;
       p.reserve = p.reserve.filter((c) => c.id !== card.id);
       to.reserve.push(card);
-      log(s, `${p.name} gave ${card.name} to ${to.name}.`);
+      log(s, `${p.name} gave ${card.name} to ${to.name}.`, 'public', 'card');
       return null;
     }
     case 'exposeIntel': {
@@ -409,7 +468,7 @@ function handle(s: S, a: Action): string | null {
       if (!e || !p.intel.some((i) => i.employeeId === e.id && i.trait === a.trait)) return 'You have no such intel';
       if (e.hiddenTrait1 === a.trait) e.hiddenTrait1Revealed = true;
       else e.hiddenTrait2Revealed = true;
-      log(s, `${p.name} exposes: ${e.name} is ${TRAIT_LABEL[a.trait]} (${e.hiddenTrait1 === a.trait ? '+2' : '0'}).`, 'public', 'reveal');
+      log(s, `${p.name} disclosed publicly: ${e.name} (${D(s, e.deptId).name}) is ${TRAIT_LABEL[a.trait]} (${e.hiddenTrait1 === a.trait ? '+2' : '0'}).`, 'public', 'reveal');
       return null;
     }
     case 'accuse': {
@@ -438,7 +497,7 @@ function handle(s: S, a: Action): string | null {
 /** §62 / D7: majority, tie → active player's vote. */
 function closeVoting(s: S, ev: ActiveEvent) {
   const voters = turnOrder(s, s.currentPlayer).filter((id) => ev.votes[id]);
-  ev.queue = voters;
+  ev.queue = voters; // already in this order (pushed as votes came in); reset for safety
   const label = (id: 'A' | 'B') => ev.card.options.find((o) => o.id === id)?.label ?? id;
   if (ev.card.type === 'Global' && ev.card.resolution !== 'individual') {
     const a = voters.filter((id) => ev.votes[id] === 'A').length;
