@@ -54,9 +54,9 @@ export const ui = {
 
 /** Who a card can target is decided by its direction: positive → your team (+ Neutral departments),
  *  hostile and mole → other players' teams (+ Neutral departments for hostile). */
-export const TARGET_WORD: Record<InfluenceCard['direction'], string> = { positive: '↑ Your team', negative: '↓ Other teams', mole: '◉ Other teams' };
+export const TARGET_WORD: Record<InfluenceCard['direction'], string> = { positive: '↑ Your team / unattached rivals', negative: '↓ Other teams', mole: '◉ Other teams' };
 export const noTargetsText = (c: InfluenceCard) =>
-  c.direction === 'positive' ? 'No one on your team can be targeted right now' : 'No rival employee can be targeted right now';
+  c.direction === 'positive' ? 'No one on your team (or unattached rival) can be targeted right now' : 'No rival employee can be targeted right now';
 
 export const esc = (s: unknown): string =>
   String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);

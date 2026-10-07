@@ -284,14 +284,23 @@ describe('influence resolution (§35–§37, §13, D4)', () => {
     const sorted = (xs: string[]) => [...xs].sort();
     for (const mode of ['Internal', 'External', 'Both'] as const) {
       const pos = give(g, 0, { mode });
-      expect(sorted(g.legalTargets(0, pos))).toEqual(sorted(g.state.departments.filter((d) => d.teamLead === 0 || d.teamLead === null).flatMap((d) => d.employeeIds)));
+      // D43: own + Neutral depts, plus rivals' employees that are still Neutral/Skeptical.
+      expect(sorted(g.legalTargets(0, pos))).toEqual(sorted(g.state.employees.filter((e) => {
+        const lead = g.state.departments.find((d) => d.id === e.deptId)!.teamLead;
+        return lead === 0 || lead === null || e.loyalty === 'Neutral' || e.loyalty === 'Skeptical';
+      }).map((e) => e.id)));
       const neg = give(g, 0, { mode, direction: 'negative' });
       expect(g.legalTargets(0, neg)).not.toContain(mine[0]);
       expect(g.legalTargets(0, neg)).toEqual(expect.arrayContaining([...rival, ...free]));
       const mole = give(g, 0, { mode, direction: 'mole', cost: 3 });
       expect(sorted(g.legalTargets(0, mole))).toEqual(sorted(g.state.departments.filter((d) => d.teamLead !== null && d.teamLead !== 0).flatMap((d) => d.employeeIds)));
     }
-    expect(g.predict(0, give(g, 0), rival[0])).toMatchObject({ legal: false, reason: 'Positive cards work on your own team' });
+    expect(g.predict(0, give(g, 0), rival[0]).legal).toBe(true); // Neutral rival employee: charmable (D43)
+    const r0 = g.state.employees.find((e) => e.id === rival[0])!;
+    const rivalLead = g.state.departments.find((d) => d.id === r0.deptId)!.teamLead!;
+    r0.loyalty = 'Favorable'; r0.politicalOwner = rivalLead;
+    expect(g.predict(0, give(g, 0), rival[0]).legal).toBe(false); // committed to the rival: not charmable
+    r0.loyalty = 'Neutral'; r0.politicalOwner = null;
     expect(g.predict(0, give(g, 0, { direction: 'negative' }), mine[0])).toMatchObject({ legal: false, reason: 'Hostile cards target other teams' });
     expect(g.predict(0, give(g, 0), free[0]).legal).toBe(true); // POSITIVE_CARDS_ALLOW_NEUTRAL
   });

@@ -590,3 +590,19 @@ Consequence: a rival's department can no longer be won with positive cards, only
 rebellion settlement; in the sims fewer games see a capture (3p Takeover: 137 of 300).
 
 **Where.** `rules.ts` → `checkPlay`, `POSITIVE_CARDS_ALLOW_NEUTRAL`.
+
+---
+
+## D43. Positive cards may charm a rival's *unattached* employees (owner decision, 2026-10-07)
+
+**Issue.** D42 (positive cards only on your own team, plus Neutral departments) made a rival's department
+reachable only through rebellion; simulated capture rate fell from most games to under half.
+
+**Options.** (1) Keep D42 strictly. (2) Allow positive cards on a rival's employee only while that employee is
+still unattached (Neutral or Skeptical). (3) Back to the spec (positive anywhere, subject to D4).
+
+**Chosen: 2 (owner picked it).** You can still poach, but you never "charm" someone already Favorable/Loyal to a
+rival, and Rebels in a rival department are recovered through the rebellion route, not by charm.
+Switch: `POSITIVE_CARDS_ALLOW_UNATTACHED_RIVALS` in `src/engine/rules.ts`.
+
+**Where.** `src/engine/rules.ts` (`checkPlay`), card label in `src/ui/helpers.ts`, How to Play.

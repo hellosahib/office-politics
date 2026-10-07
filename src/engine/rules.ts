@@ -353,8 +353,12 @@ export function draw(s: S, p: Player, n: number) {
 export const spendFor = (c: InfluenceCard, e: Employee) =>
   Math.max(c.cost, (c.direction === 'negative' && e.loyalty === 'Loyal') || (c.direction === 'positive' && e.loyalty === 'Rebel') ? 2 : 0);
 
-/** D42 (coordinator's assumption): positive cards may also target Neutral departments so they stay capturable. */
+/** D42: positive cards may also target Neutral departments so they stay capturable. */
 export const POSITIVE_CARDS_ALLOW_NEUTRAL = true;
+/** D43 (owner, 2026-10-07): positive cards may reach a RIVAL's employee only while that employee is
+ *  still unattached — Neutral or Skeptical — never once Favorable/Loyal to the rival (nor Rebel). */
+export const POSITIVE_CARDS_ALLOW_UNATTACHED_RIVALS = true;
+const UNATTACHED: readonly string[] = ['Neutral', 'Skeptical'];
 
 export type PlayCheck = { error: string } | { card: InfluenceCard; e: Employee; spend: number };
 
@@ -369,8 +373,12 @@ export function checkPlay(s: S, pid: PlayerId, cardId: string, targetId: string)
   if (!e) return { error: 'Unknown employee' };
   // D42: legality by card DIRECTION (card.mode no longer matters).
   const lead = D(s, e.deptId).teamLead;
-  if (card.direction === 'positive' && lead !== pid && !(lead === null && POSITIVE_CARDS_ALLOW_NEUTRAL)) {
+  if (card.direction === 'positive' && lead === null && !POSITIVE_CARDS_ALLOW_NEUTRAL) {
     return { error: 'Positive cards work on your own team' };
+  }
+  if (card.direction === 'positive' && lead !== null && lead !== pid
+      && !(POSITIVE_CARDS_ALLOW_UNATTACHED_RIVALS && UNATTACHED.includes(e.loyalty))) {
+    return { error: `${e.name} is committed to a rival; only Neutral or Skeptical rivals can be charmed` };
   }
   if (card.direction === 'negative' && lead === pid) return { error: 'Hostile cards target other teams' };
   if (card.direction === 'mole' && (lead === null || lead === pid)) return { error: 'Moles are planted in other players\' teams' };

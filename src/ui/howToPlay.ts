@@ -54,7 +54,7 @@ const SECTIONS: [id: string, title: string, html: string][] = [
     <table class="ht-t"><tr><th>Departments</th><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td></tr>
       <tr><th>Cost per turn</th><td>0</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td></tr></table>
     <p>You get <b>4 cards</b> a turn. A card's <b>direction</b> decides who it can target, shown on the card:</p>
-    <ul><li><b>↑ Your team</b> — positive cards work on your own departments (and Neutral ones).</li>
+    <ul><li><b>↑ Your team / unattached rivals</b> — positive cards work on your own departments, on Neutral departments, and on a rival's employees only while they are still Neutral or Skeptical. Once someone is Favorable or Loyal to a rival you must push them down first.</li>
       <li><b>↓ Other teams</b> — hostile cards work on rival players' departments (and Neutral ones).</li>
       <li><b>◉ Other teams</b> — moles are planted in rival players' departments.</li></ul>
     <p>A card with nobody it can reach says so (e.g. "No one on your team can be targeted right now").</p>
