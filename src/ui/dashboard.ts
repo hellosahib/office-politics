@@ -2,6 +2,7 @@
 import type { GameView, Pending, TraitPole } from '../engine/types';
 import { MAX_RESERVE, RANK_LABEL, TRAIT_LABEL } from '../engine/types';
 import type { GameClient } from '../client';
+import { portraitDataUrl } from '../board/portrait';
 import { deptName, empName, esc, glyph, isMine, meterHtml, pendingPlayer, pname, ui, weightLabel, type Handlers } from './helpers';
 
 const PHASE_LABEL: Record<Pending['kind'], string> = {
@@ -43,13 +44,15 @@ export function dashboardHtml(view: GameView, client: GameClient): string {
     const status = view.phase === 'gameOver' ? 'Game over'
       : myTurn ? `Your move: ${PHASE_LABEL[view.pending.kind]}` : `Waiting for ${pname(view, pendingPlayer(view.pending))}`;
     const canExpose = myTurn && view.pending.kind === 'play';
-    const intel = (me.intel ?? []).map(i => {
+    // "Your intel": newest first, each with portrait, department and the trait it revealed.
+    const intel = [...(me.intel ?? [])].reverse().map(i => {
       const e = view.employees.find(x => x.id === i.employeeId);
       const already = (e?.hiddenTrait1 === i.trait && e.hiddenTrait1Public) || (e?.hiddenTrait2 === i.trait && e.hiddenTrait2Public);
-      return `<li><span class="intel-who">${empName(view, i.employeeId)}</span>
-        <span class="stamp sm">${TRAIT_LABEL[i.trait]} ${weightLabel(i.weight)}</span>
-        ${canExpose && !already ? `<button type="button" class="link" data-act="expose" data-id="${esc(i.employeeId)}" data-trait="${i.trait}">Expose publicly</button>` : ''}
-        ${already ? '<span class="muted small">public</span>' : ''}</li>`;
+      return `<li class="intel-item">${e ? `<img src="${portraitDataUrl(e)}" alt="" width="30" height="38">` : ''}
+        <div class="intel-body"><button type="button" class="link intel-who" data-act="inspect" data-id="${esc(i.employeeId)}">${empName(view, i.employeeId)}</button>
+          <span class="muted small">${deptName(view, e?.deptId)}</span>
+          <span class="tchip">${TRAIT_LABEL[i.trait]} <span class="w">${weightLabel(i.weight)}</span>${already ? ' <span class="tmark">public</span>' : ' <span class="tmark lock">🔒</span>'}</span>
+          ${canExpose && !already ? `<button type="button" class="link" data-act="expose" data-id="${esc(i.employeeId)}" data-trait="${i.trait}">Expose publicly</button>` : ''}</div></li>`;
     }).join('');
     const tile = (label: string, value: string | number, cls = '') => `<div class="stat ${cls}"><span class="num">${value}</span><span class="label">${label}</span></div>`;
     mine = `<section class="me-card" style="--pc:${esc(me.color)}">
@@ -58,8 +61,10 @@ export function dashboardHtml(view: GameView, client: GameClient): string {
         <div><div class="me-name">${esc(me.name)}</div><div class="rank">${RANK_LABEL[me.rank]}</div></div>
       </header>
       <div class="turn-status${myTurn ? ' live' : ''}">${status}</div>
-      <div class="stat-infl"><span class="label">Influence</span><span class="num">${me.influence}</span><span class="of">/ ${me.influenceMax}</span>
-        ${meterHtml(`infl:${me.id}`, me.influence, me.influenceMax)}</div>
+      ${view.currentPlayer === me.id
+        ? `<div class="stat-infl"><span class="label">Influence</span><span class="num">${me.influence}</span><span class="of">/ ${me.influenceMax}</span>
+        ${meterHtml(`infl:${me.id}`, me.influence, me.influenceMax)}</div>`
+        : `<div class="stat-infl idle"><span class="label">Influence</span><span class="num">${me.influenceMax}</span><span class="of">not your turn</span></div>`}
       <div class="stat-grid">
         ${tile('Depts', me.controlledDepartments.length)}${tile('Upkeep', me.managementCost)}${tile('Saved', `${me.reserveCount}/${MAX_RESERVE}`)}
         ${tile('Loyal', me.loyalists, 'gold')}${tile('Favorable', me.favorable, 'good')}${tile('Rebels', me.rebels, me.rebels ? 'bad' : '')}
@@ -67,12 +72,14 @@ export function dashboardHtml(view: GameView, client: GameClient): string {
       </div>
       <div class="depts-line"><span class="label">Departments</span> ${me.controlledDepartments.map(d => deptName(view, d)).join(', ') || '<span class="muted">none</span>'}</div>
       ${me.agenda ? `<div class="agenda"><div class="agenda-seal">Secret agenda</div><b>${esc(me.agenda.name)}</b><div class="small">${esc(me.agenda.objective)}</div></div>` : ''}
-      ${intel ? `<div class="sec-title">Private intel</div><ul class="intel">${intel}</ul>` : ''}
+      ${intel ? `<div class="sec-title">Your intel <span class="tag-private">private</span></div><ul class="intel">${intel}</ul>` : ''}
     </section>`;
   }
   const players = view.players.map(p => `<li class="pl${p.eliminated ? ' out' : ''}${p.id === view.currentPlayer ? ' current' : ''}" style="--pc:${esc(p.color)}">
       <div class="pl-top">${pname(view, p.id)}${p.isBot ? ' <span class="tag">bot</span>' : ''}${p.eliminated ? ' <span class="tag">out</span>' : ''}<span class="pl-rank">${RANK_LABEL[p.rank]}</span></div>
-      <div class="pl-stats"><span title="Departments"><b>${p.controlledDepartments.length}</b> dept</span><span title="Influence"><b>${p.influence}</b>/${p.influenceMax} inf</span><span title="Cards in hand"><b>${p.handCount}</b> hand</span><span title="Saved cards"><b>${p.reserveCount}</b> saved</span></div>
+      <div class="pl-stats"><span title="Departments"><b>${p.controlledDepartments.length}</b> dept</span>${p.id === view.currentPlayer
+        ? `<span title="Influence this turn"><b>${p.influence}</b>/${p.influenceMax} inf</span>`
+        : `<span class="idle" title="Influence per turn (not their turn)"><b>${p.influenceMax}</b> inf</span>`}<span title="Cards in hand"><b>${p.handCount}</b> hand</span><span title="Saved cards"><b>${p.reserveCount}</b> saved</span></div>
     </li>`).join('');
   return `${mine}<div class="sec-title">Players</div><ul class="players">${players}</ul>`;
 }

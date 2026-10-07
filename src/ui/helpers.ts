@@ -1,7 +1,7 @@
 // Shared bits for every screen: escaping, names in player colours, card rendering,
 // the local UI state object and the handler/context types used by delegation.
 import type {
-  Action, Backfire, CardId, DeptId, EmployeeId, GameView, InfluenceCard, Pending, PlayerId, SecondaryEffect,
+  Action, Backfire, CardId, DeptId, EmployeeId, EmployeeView, GameView, InfluenceCard, Pending, PlayerId, SecondaryEffect, TraitPole,
 } from '../engine/types';
 import { TRAIT_LABEL } from '../engine/types';
 import type { GameClient } from '../client';
@@ -38,7 +38,25 @@ export const ui = {
   showLog: false,
   handOpen: true,
   error: null as string | null,
+  /** Target picker: row under the pointer (prediction preview) and the chosen event target. */
+  hoverTarget: null as EmployeeId | null,
+  eventPick: null as string | null,
+  /** Event outcome modal (src/ui/results.ts) is open on this screen. */
+  eventResultOpen: false,
+  /** Cinema (src/ui/cinema.ts): seat whose "Meet your team" intro is open, cards not yet dealt in,
+   *  and whether the event modal waits for its draw animation. */
+  introFor: null as PlayerId | null,
+  undealt: new Set<CardId>(),
+  holdEvent: false,
+  /** Cards that left the hand on purpose (played / given): no discard animation for them. */
+  flown: new Set<CardId>(),
 };
+
+/** Who a card can target is decided by its direction: positive → your team (+ Neutral departments),
+ *  hostile and mole → other players' teams (+ Neutral departments for hostile). */
+export const TARGET_WORD: Record<InfluenceCard['direction'], string> = { positive: '↑ Your team', negative: '↓ Other teams', mole: '◉ Other teams' };
+export const noTargetsText = (c: InfluenceCard) =>
+  c.direction === 'positive' ? 'No one on your team can be targeted right now' : 'No rival employee can be targeted right now';
 
 export const esc = (s: unknown): string =>
   String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -64,6 +82,40 @@ export const deptName = (view: GameView, id: DeptId | null | undefined) =>
 
 export const empName = (view: GameView, id: EmployeeId) =>
   esc(view.employees.find(e => e.id === id)?.name ?? id);
+
+/** Department lead's name (engine field when present, else the team-lead player's name). */
+export function leadName(view: GameView, id: DeptId): string {
+  const d = view.departments.find(x => x.id === id) as ({ leadName?: string | null; teamLead: PlayerId | null } | undefined);
+  if (d?.leadName) return esc(d.leadName);
+  return pname(view, d?.teamLead ?? null);
+}
+
+/** Loyalty pill. */
+export const loyChip = (l: string) => `<span class="loy-chip loy-${esc(l)}">${esc(l)}</span>`;
+
+/** Small badges for an employee: rebel / known mole / promise. `showPrivate` = may this screen show private info. */
+export function empBadges(e: EmployeeView, showPrivate: boolean): string {
+  return (e.loyalty === 'Rebel' ? '<span class="mini-flag rebel" title="Rebel">!</span>' : '')
+    + (e.mole && (showPrivate || e.mole.visibleBecause === 'exposed') ? '<span class="mini-flag mole" title="Mole">◉</span>' : '')
+    + (e.promise ? '<span class="mini-flag promise" title="Promotion promise">★</span>' : '');
+}
+
+/**
+ * Trait chips for a target: known (+1), hidden (+2) and hidden (0), redacted "???" when unknown to this screen.
+ * With a card, a chip matching its primary/secondary affinity is green, its adverse affinity red.
+ */
+export function traitChips(e: EmployeeView, showPrivate: boolean, card?: InfluenceCard | null, sm = false): string {
+  const h1 = showPrivate || e.hiddenTrait1Public ? e.hiddenTrait1 : null;
+  const h2 = showPrivate || e.hiddenTrait2Public ? e.hiddenTrait2 : null;
+  const chip = (t: TraitPole | null, w: number) => {
+    const hit = !t || !card ? '' : t === card.primary || t === card.secondary ? ' plus' : t === card.adverse ? ' minus' : '';
+    // Hidden traits: "public" once disclosed to all, a lock when only this viewer knows (private intel).
+    const pub = w === 1 ? null : w === 2 ? e.hiddenTrait1Public : e.hiddenTrait2Public;
+    const mark = !t || pub === null ? '' : pub ? (sm ? '' : ' <span class="tmark">public</span>') : ' <span class="tmark lock" title="Private: only you know">🔒</span>';
+    return `<span class="tchip${sm ? ' sm' : ''}${t ? hit : ' unknown'}">${t ? esc(TRAIT_LABEL[t]) : '???'} <span class="w">${weightLabel(w)}</span>${mark}</span>`;
+  };
+  return `<span class="tchips">${chip(e.permanentTrait, 1)}${chip(h1, 2)}${chip(h2, 0)}</span>`;
+}
 
 export const weightLabel = (w: number) => (w > 0 ? `(+${w})` : `(${w})`);
 export const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '+0');
@@ -126,16 +178,18 @@ export function cardHtml(c: InfluenceCard, o: { act?: string; selected?: boolean
     <span class="card-cost" title="Cost: ${c.cost} Influence">${c.cost}</span>
     <span class="card-dir" title="${dirName}">${icon}</span>
     <span class="card-name">${esc(c.name)}</span>
-    <span class="card-meta">${dirName} · ${esc(c.mode)}${c.direction !== 'mole' ? ` · base ${c.baseEffect}` : ''}</span>
+    <span class="card-meta">${dirName}${c.direction !== 'mole' ? ` · base ${c.baseEffect}` : ''}</span>
+    <span class="card-mode tgt-${c.direction}" title="Who this card can target">${TARGET_WORD[c.direction]}</span>
     ${aff ? `<span class="card-aff">${aff}</span>` : ''}
     ${strong ? `<span class="card-fx"><b>Strong</b> ${esc(strong)}</span>` : ''}
     ${BACKFIRE_TEXT[c.backfire] ? `<span class="card-fx bad"><b>Backfire</b> ${esc(BACKFIRE_TEXT[c.backfire])}</span>` : ''}
     <span class="card-text">${esc(c.text)}</span>
     ${o.disabled ? `<span class="card-reason">${esc(o.disabled)}</span>` : ''}`;
   const cls = `card cat-${c.category} dir-${c.direction}${o.selected ? ' selected' : ''}${o.disabled ? ' dim' : ''}`;
-  const enter = `data-enter="card:${esc(c.id)}" data-anim="draw"`;
-  if (!o.act) return `<div class="card-wrap" ${enter}><div class="${cls}">${body}</div>${o.extra ?? ''}</div>`;
-  return `<div class="card-wrap" ${enter}><button type="button" class="${cls}" data-act="${o.act}" data-id="${esc(c.id)}"${o.disabled ? ' aria-disabled="true"' : ''}>${body}</button>${o.extra ?? ''}</div>`;
+  // Dealing in is animated by src/ui/cinema.ts; undealt cards hold their slot invisibly.
+  const wrap = `class="card-wrap${ui.undealt.has(c.id) ? ' undealt' : ''}" data-card="${esc(c.id)}"`;
+  if (!o.act) return `<div ${wrap}><div class="${cls}">${body}</div>${o.extra ?? ''}</div>`;
+  return `<div ${wrap}><button type="button" class="${cls}" data-act="${o.act}" data-id="${esc(c.id)}"${o.disabled ? ' aria-disabled="true"' : ''}>${body}</button>${o.extra ?? ''}</div>`;
 }
 
 /** Replace innerHTML only when it changed, so scroll positions and focus survive re-renders. */
@@ -143,7 +197,10 @@ const lastHtml = new WeakMap<Element, string>();
 export function setHtml(el: Element, html: string): boolean {
   if (lastHtml.get(el) === html) return false;
   lastHtml.set(el, html);
+  // Lists marked data-scroll="<key>" keep their scroll position across repaints.
+  const scroll = new Map([...el.querySelectorAll<HTMLElement>('[data-scroll]')].map(x => [x.dataset.scroll!, x.scrollTop]));
   el.innerHTML = html;
+  for (const [k, top] of scroll) { const x = el.querySelector<HTMLElement>(`[data-scroll="${k}"]`); if (x) x.scrollTop = top; }
   return true;
 }
 
@@ -202,14 +259,22 @@ export function tweenMeters(root: Element): void {
   });
 }
 
-/** Colour every player name in a plain log line. Skips "Sahib Singh"-style employee names (D24). */
+const reEsc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Player-name matcher that skips "Sahib Singh"-style employee names (D24). */
+const nameRe = (name: string) => new RegExp(`\\b${reEsc(name)}\\b(?! [A-Z])`, 'g');
+/** Does a log line mention this player? */
+export const mentions = (text: string, name: string) => nameRe(name).test(text);
+
+/** Colour every player name in a plain log line; department names become dept-filter buttons. */
 export function colourNames(view: GameView, text: string): string {
   let out = esc(text);
+  // ponytail: regex per name per line; fine for a few hundred log lines.
+  for (const d of view.departments) {
+    out = out.replace(new RegExp(`\\b${reEsc(esc(d.name))}(?![\\w-])`, 'g'),
+      `<button type="button" class="dname" data-act="log-dept" data-id="${esc(d.id)}">${esc(d.name)}</button>`);
+  }
   for (const p of view.players) {
-    const n = esc(p.name);
-    // ponytail: regex per player per line; fine for a few hundred log lines.
-    const re = new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b(?! [A-Z])`, 'g');
-    out = out.replace(re, `<span class="pname" style="--pc:${esc(p.color)}">${n}</span>`);
+    out = out.replace(nameRe(esc(p.name)), `<span class="pname" style="--pc:${esc(p.color)}">${esc(p.name)}</span>`);
   }
   return out;
 }

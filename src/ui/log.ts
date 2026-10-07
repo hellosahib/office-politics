@@ -1,17 +1,24 @@
-// §66 political log: newest first, private entries styled apart, tag filter chips, dept highlight.
+// §66 political log: newest first, private entries styled apart, tag filter chips ("mine" = lines
+// about the viewer), dept highlight. Lines render the engine's narrative text as-is; score
+// breakdowns (tag 'explanation') never appear here — they live in the forecast and the card banner.
 import type { GameView } from '../engine/types';
-import { colourNames, esc, ui, type Handlers } from './helpers';
+import type { GameClient } from '../client';
+import { colourNames, esc, mentions, ui, type Handlers } from './helpers';
 
-export function logHtml(view: GameView): string {
-  const tags = [...new Set(view.log.map(l => l.tag).filter((t): t is string => !!t))].sort();
-  const chips = ['all', 'private', ...tags].map(t =>
+export function logHtml(view: GameView, client: GameClient): string {
+  const lines = view.log.map((l, i) => ({ l, i })).filter(({ l }) => l.tag !== 'explanation');
+  const tags = [...new Set(lines.map(({ l }) => l.tag).filter((t): t is string => !!t))].sort();
+  const me = ui.canAct && client.me !== null ? view.players[client.me] : null;
+  const chips = ['all', ...(me ? ['mine'] : []), 'private', ...tags].map(t =>
     `<button type="button" class="chip${ui.logTag === t ? ' on' : ''}" data-act="log-tag" data-tag="${esc(t)}">${esc(t)}</button>`).join('');
   const dept = view.departments.find(d => d.id === ui.logDept)?.name;
-  const entries = view.log
-    .map((l, i) => ({ l, i }))
+  const entries = lines
     // Local hot-seat: while a bot (or an un-curtained seat) is `me`, hide its private lines.
     .filter(({ l }) => ui.canAct || l.visibility === 'public')
-    .filter(({ l }) => ui.logTag === 'all' || (ui.logTag === 'private' ? l.visibility !== 'public' : l.tag === ui.logTag))
+    .filter(({ l }) => ui.logTag === 'all'
+      || (ui.logTag === 'private' ? l.visibility !== 'public'
+        : ui.logTag === 'mine' ? !!me && (l.visibility === me.id || mentions(l.text, me.name))
+          : l.tag === ui.logTag))
     .reverse()
     .map(({ l, i }) => {
       const cls = `t-${esc(l.tag ?? 'none')}${l.visibility !== 'public' ? ' private' : ''}${dept && l.text.includes(dept) ? ' hl' : ''}`;
@@ -19,10 +26,11 @@ export function logHtml(view: GameView): string {
     }).join('');
   return `<div class="log-head"><h3>Political log</h3>${dept ? `<button type="button" class="chip on" data-act="log-dept-clear">${esc(dept)} ✕</button>` : ''}</div>
     <div class="chips">${chips}</div>
-    <ul class="log-list">${entries || '<li class="muted empty">Nothing on the record yet.</li>'}</ul>`;
+    <ul class="log-list" data-scroll="log">${entries || '<li class="muted empty">Nothing on the record yet.</li>'}</ul>`;
 }
 
 export const logActions: Handlers = {
   'log-tag': (el, c) => { ui.logTag = el.dataset.tag!; c.render(); },
+  'log-dept': (el, c) => { ui.logDept = ui.logDept === el.dataset.id ? null : el.dataset.id!; c.board.focusDept(ui.logDept); c.render(); },
   'log-dept-clear': (_el, c) => { ui.logDept = null; c.board.focusDept(null); c.render(); },
 };

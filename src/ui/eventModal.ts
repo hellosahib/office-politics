@@ -1,16 +1,46 @@
 // §61–§62 event resolution + Global voting, eventTarget picking, revealChoice (§29).
 // Three looks: Global = company-wide broadcast, Local = incident memo, Reveal = dossier that opens.
-import type { GameView } from '../engine/types';
+import type { DeptId, GameView } from '../engine/types';
 import { TRAIT_LABEL } from '../engine/types';
 import type { GameClient } from '../client';
-import { deptName, esc, isMine, pendingPlayer, pname, ui, weightLabel, type Handlers } from './helpers';
+import { portraitDataUrl } from '../board/portrait';
+import { deptName, empBadges, esc, isMine, leadName, loyChip, pendingPlayer, pname, ui, weightLabel, type Handlers } from './helpers';
+import { eventTargetTitle } from './picker';
+
+/** Departments the event touches; Global (or unknown) → the viewer's own departments. */
+function affectedDepts(view: GameView, client: GameClient): DeptId[] {
+  const ev = view.activeEvent as (GameView['activeEvent'] & { affectedDeptIds?: DeptId[] }) | null;
+  if (ev?.affectedDeptIds?.length) return ev.affectedDeptIds;
+  const p = view.pending;
+  const d = ev?.deptId ?? (p.kind === 'eventChoice' ? p.deptId : null);
+  if (d) return [d];
+  return client.me !== null ? view.players[client.me]?.controlledDepartments ?? [] : [];
+}
+
+/** Compact "Your team" strip: who the event can hit, so the choice is informed. Click = dossier. */
+function teamStripHtml(view: GameView, client: GameClient): string {
+  const depts = affectedDepts(view, client);
+  if (!depts.length) return '';
+  const global = view.activeEvent?.card.type === 'Global' && !view.activeEvent.deptId;
+  const rows = depts.map(id => {
+    const d = view.departments.find(x => x.id === id);
+    if (!d) return '';
+    const emps = d.employeeIds.map(eid => view.employees.find(e => e.id === eid)!).filter(Boolean).map(e => {
+      const pc = e.politicalOwner !== null ? view.players[e.politicalOwner]?.color : null;
+      return `<button type="button" class="ts-emp${ui.inspect === e.id ? ' on' : ''}" data-act="inspect" data-id="${esc(e.id)}" style="--pc:${esc(pc ?? 'var(--line-2)')}" title="Open ${esc(e.name)}'s file">
+        <img src="${portraitDataUrl(e)}" alt="" width="34" height="42"><span class="ts-name">${esc(e.name.split(' ')[0])}${empBadges(e, ui.canAct)}</span>${loyChip(e.loyalty)}</button>`;
+    }).join('');
+    return `<div class="ts-dept"><div class="ts-head"><b>${esc(d.name)}</b><span class="muted small">Lead ${leadName(view, id)}</span></div><div class="ts-row">${emps}</div></div>`;
+  }).join('');
+  return `<div class="team-strip"><div class="sec-title">${global ? 'Your team' : 'Who this affects'}</div>${rows}</div>`;
+}
 
 const KICKER = { Global: 'All-hands broadcast', Local: 'Incident memo', Reveal: 'Personnel file' } as const;
 
 export function eventHtml(view: GameView, client: GameClient): string {
   const ev = view.activeEvent;
   const p = view.pending;
-  if (view.phase !== 'event' || (!ev && p.kind !== 'revealChoice')) return '';
+  if (view.phase !== 'event' || (!ev && p.kind !== 'revealChoice') || ui.holdEvent) return '';
   const mine = isMine(view, client);
   const who = pendingPlayer(p);
   const card = ev?.card;
@@ -48,15 +78,10 @@ export function eventHtml(view: GameView, client: GameClient): string {
   }
 
   if (p.kind === 'eventTarget') {
-    if (mine) {
-      const items = p.candidates.map(id => {
-        const label = p.choose === 'employee'
-          ? (() => { const e = view.employees.find(x => x.id === id); return `${esc(e?.name ?? id)} <span class="loy loy-${e?.loyalty}">${e?.loyalty ?? ''}</span>`; })()
-          : deptName(view, id);
-        return `<button type="button" class="chip" data-act="event-target" data-id="${esc(id)}">${label}</button>`;
-      }).join('');
-      body += `<div class="prompt">Choose ${p.choose === 'employee' ? 'an employee' : 'a department'}, here or on the board.</div><div class="chips">${items}</div>`;
-    } else body += `<div class="waiting-line">Waiting for ${pname(view, p.player)} to choose a ${p.choose}…</div>`;
+    const ask = eventTargetTitle(card?.options.find(o => o.id === p.optionId), p.choose);
+    body += mine
+      ? `<div class="prompt">${esc(ask)} <span class="muted">Choose in the dialog.</span></div>`
+      : `<div class="waiting-line">Waiting for ${pname(view, p.player)}: ${esc(ask.toLowerCase().replace(/\?$/, ''))}…</div>`;
   }
 
   if (p.kind === 'revealChoice') {
@@ -89,6 +114,7 @@ export function eventHtml(view: GameView, client: GameClient): string {
       ${card ? `<p class="situation">${esc(card.situation)}</p>` : ''}
       <div class="event-target">${target}</div>
       ${body}
+      ${type !== 'Reveal' ? teamStripHtml(view, client) : ''}
     </div>
   </div>`;
 }
@@ -99,4 +125,5 @@ export const eventActions: Handlers = {
   'reveal': (el, c) => void c.act({ type: 'revealChoice', player: c.client.me!, mode: el.dataset.mode as 'public' | 'private' }),
   'event-min': (_el, c) => { ui.eventMin = true; c.render(); },
   'event-max': (_el, c) => { ui.eventMin = false; c.render(); },
+  'inspect': (el, c) => { ui.inspect = el.dataset.id!; c.render(); },
 };
