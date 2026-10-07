@@ -22,8 +22,7 @@ export function decide(view: GameView, helpers: BotHelpers, rng: () => number = 
   const self = view.players[me];
 
   switch (p.kind) {
-    case 'play':
-      if (p.focus === null) return { type: 'focus', player, focus: chooseFocus(view) };
+    case 'play': // D37: no turn focus; legalTargets already follows each card's direction (D42)
       return choosePlay(view, helpers, rng) ?? { type: 'donePlaying', player };
 
     case 'save': {
@@ -37,7 +36,7 @@ export function decide(view: GameView, helpers: BotHelpers, rng: () => number = 
       return { type: 'endTurn', player };
 
     case 'revealChoice':
-      return { type: 'revealChoice', player, mode: self.influence >= 2 ? 'private' : 'public' };
+      return { type: 'revealChoice', player, mode: view.currentPlayer === me && self.influence >= 2 ? 'private' : 'public' }; // off-turn: bank not in view, play safe
 
     case 'accusation': {
       // Crude: the richest rival is the likeliest mole-planter.
@@ -55,17 +54,6 @@ export function decide(view: GameView, helpers: BotHelpers, rng: () => number = 
     case 'eventTarget':
       return { type: 'eventTarget', player, targetId: chooseEventTarget(view, p.optionId, p.choose, p.candidates) };
   }
-}
-
-/** Manage if any owned dept has a rebel or ≥2 skeptics; otherwise grow. */
-function chooseFocus(view: GameView): 'Manage' | 'Expand' {
-  const mine = new Set(view.players[view.viewer!].controlledDepartments);
-  for (const d of view.departments) {
-    if (!mine.has(d.id)) continue;
-    const emps = view.employees.filter((e) => e.deptId === d.id);
-    if (emps.some((e) => e.loyalty === 'Rebel') || emps.filter((e) => e.loyalty === 'Skeptical').length >= 2) return 'Manage';
-  }
-  return 'Expand';
 }
 
 function knownTraits(view: GameView, e: EmployeeView): Set<TraitPole> {

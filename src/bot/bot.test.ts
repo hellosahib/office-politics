@@ -17,21 +17,17 @@ function card(id: string, primary: InfluenceCard['primary']): InfluenceCard {
 }
 
 describe('bot', () => {
-  it('chooses Manage when an owned department has a rebel, Expand otherwise', () => {
-    const v = makeMockView('full'); // P0 owns sales, which has 2 rebels
-    expect(decide(v, helpers([]), zero)).toEqual({ type: 'focus', player: 0, focus: 'Manage' });
-
-    const calm = makeMockView('full');
-    const mine = new Set(calm.players[0].controlledDepartments);
-    for (const e of calm.employees) if (mine.has(e.deptId)) e.loyalty = 'Favorable';
-    expect(decide(calm, helpers([]), zero)).toEqual({ type: 'focus', player: 0, focus: 'Expand' });
+  it('never sends the retired focus action (D37)', () => {
+    const v = makeMockView('full');
+    v.pending = { kind: 'play', player: 0, focus: null };
+    expect(decide(v, helpers([]), zero)).toEqual({ type: 'donePlaying', player: 0 });
   });
 
   it('picks the card whose primary trait matches a known trait of the target', () => {
     const v = makeMockView('full');
     const target = v.employees.find((e) => e.id === 'yash-malhotra')!;
     const other = target.permanentTrait === 'Lazy' ? 'Ambitious' : 'Lazy';
-    v.pending = { kind: 'play', player: 0, focus: 'Expand' };
+    v.pending = { kind: 'play', player: 0, focus: null };
     v.players[0].hand = [card('a-nomatch', other), card('b-match', target.permanentTrait)];
     v.players[0].reserveCount = 3; // nothing worth saving -> full budget
     expect(decide(v, helpers([target.id]), zero)).toEqual({ type: 'playCard', player: 0, cardId: 'b-match', targetId: target.id });
@@ -48,7 +44,7 @@ describe('bot', () => {
       ],
     };
     const cases: [Pending, Action['type']][] = [
-      [{ kind: 'play', player: 0, focus: 'Manage' }, 'donePlaying'],
+      [{ kind: 'play', player: 0, focus: null }, 'donePlaying'],
       [{ kind: 'save', player: 0 }, 'save'],
       [{ kind: 'summary', player: 0 }, 'endTurn'],
       [{ kind: 'revealChoice', player: 0, employeeId: 'riya-shah', trait: 'Lazy', weight: 2 }, 'revealChoice'],
@@ -59,7 +55,7 @@ describe('bot', () => {
     for (const [pending, type] of cases) {
       const v = makeMockView('full');
       v.pending = pending;
-      v.activeEvent = { card: ev, deptId: 'engineering', votes: {}, targets: {}, remaining: [], outcome: null, votesVisible: false };
+      v.activeEvent = { card: ev, deptId: 'engineering', votes: {}, targets: {}, remaining: [], outcome: null, affectedDeptIds: ['engineering'], votesVisible: false };
       const a = decide(v, helpers([]), zero);
       expect(a.type).toBe(type);
       if (a.type === 'eventChoice') expect(a.optionId).toBe('B');            // +2 loyalty beats -1 influence

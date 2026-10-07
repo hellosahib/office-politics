@@ -74,8 +74,8 @@ function invariants(s: GameState): string[] {
   return bad;
 }
 
-const COVER = ['Investigation', 'Accusation correct', 'Accusation incorrect', 'promised', 'Ripple', 'Backfire', 'protected', 'Rebel pressure',
-  'Full rebellion', 'Leadership crisis', 'eliminated', 'Mole triggered', 'Intel:', 'Revealed:', 'expired unfulfilled', 'Internal Instability', 'captured'];
+const COVER = ['Investigation', 'Accusation correct', 'Accusation incorrect', 'promised', 'Ripple', 'Backfire', 'protected', 'pressure boils over',
+  'Full rebellion', 'Leadership crisis', 'eliminated', 'Mole triggered', 'You now know:', 'disclosed publicly', 'expired unfulfilled', 'Internal Instability', 'captured'];
 const cover = new Map<string, number>();
 const rng = createRng(12345);
 const stats = { turns: 0, cards: 0, rebels: 0, moleTriggers: 0, molesPlanted: 0, instability: 0, capped: 0, rounds: 0,
@@ -117,7 +117,6 @@ for (let g = 0; g < GAMES; g++) {
         }
         case 'play': {
           const p = s.players[pid];
-          if (!pd.focus) act({ type: 'focus', player: pid, focus: next(rng) < 0.5 ? 'Manage' : 'Expand' });
           for (let k = 0; k < 3 && s.pending.kind === 'play' && s.currentPlayer === pid; k++) {
             const options = [...p.hand, ...p.reserve].flatMap((c) => game.legalTargets(pid, c.id).map((t) => [c.id, t] as const));
             if (!options.length) break;

@@ -32,7 +32,7 @@ export function botAction(game: Game, seat: PlayerId, rng: () => number): Action
 export function fallbackAction(view: GameView, player: PlayerId): Action {
   const p = view.pending;
   switch (p.kind) {
-    case 'play': return p.focus === null ? { type: 'focus', player, focus: 'Manage' } : { type: 'donePlaying', player };
+    case 'play': return { type: 'donePlaying', player };
     case 'summary': return { type: 'endTurn', player };
     case 'save': return { type: 'save', player, cardIds: [] };
     case 'eventChoice': return { type: 'eventChoice', player, optionId: 'A' };
