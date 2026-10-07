@@ -29,12 +29,13 @@ const s = {
 };
 
 const playerCount = () => (s.board === 'mini' ? 3 : s.count);
+let intro = true;
 
 function configControls(): string {
   const opt = (v: string | number, cur: string | number, label = String(v)) =>
     `<option value="${v}"${v === cur ? ' selected' : ''}>${label}</option>`;
   return `<div class="form-grid">
-    <label>Board <select data-field="board">${opt('full', s.board, 'Full (7 departments)')}${opt('mini', s.board, 'Mini prototype (4 departments)')}</select></label>
+    <label>Board <select data-field="board">${opt('full', s.board, 'Full: 7 depts')}${opt('mini', s.board, 'Mini: 4 depts')}</select></label>
     <label>Players <select data-field="count" ${s.board === 'mini' ? 'disabled' : ''}>${opt(3, playerCount())}${opt(4, playerCount())}</select></label>
     <label>Mode <select data-field="mode">${opt('Takeover', s.mode)}${opt('Election', s.mode)}</select></label>
     ${s.mode === 'Election' ? `<label>Rounds <select data-field="rounds">${[8, 10, 12, 15].map(r => opt(r, s.rounds)).join('')}</select></label>` : ''}
@@ -42,16 +43,17 @@ function configControls(): string {
 }
 
 function localHtml(): string {
-  const seats = Array.from({ length: playerCount() }, (_, i) => `<div class="seat" style="--pc:${PLAYER_COLORS[i]}">
-      <span class="seat-dot"></span>
+  const seats = Array.from({ length: playerCount() }, (_, i) => `<div class="seat id-badge${s.bots[i] ? ' is-bot' : ''}" style="--pc:${PLAYER_COLORS[i]};--i:${i}">
+      <span class="id-clip" aria-hidden="true"></span>
+      <span class="id-band">Seat ${i + 1}</span>
+      <span class="id-photo" aria-hidden="true"></span>
       <input type="text" aria-label="Seat ${i + 1} name" data-field="name" data-i="${i}" value="${esc(s.names[i])}" maxlength="20">
-      <label class="check"><input type="checkbox" data-field="bot" data-i="${i}" ${s.bots[i] ? 'checked' : ''}> Bot</label>
+      <label class="switch"><input type="checkbox" data-field="bot" data-i="${i}" ${s.bots[i] ? 'checked' : ''}><span class="switch-ui" aria-hidden="true"></span> Bot</label>
     </div>`).join('');
   return `${configControls()}
     <div class="sec-title">Seats</div><div class="seats">${seats}</div>
-    <label class="seed">Seed <input type="number" data-field="seed" value="${s.seed}"></label>
-    <div class="row"><button type="button" class="primary big-btn" data-act="start-local">Start game</button>
-      <button type="button" data-act="help">How to play</button></div>`;
+    <details class="seed-wrap"><summary>Advanced</summary><label class="seed">Seed <input type="number" data-field="seed" value="${s.seed}"></label></details>
+    <div class="row"><button type="button" class="primary big-btn" data-act="start-local">Start game</button></div>`;
 }
 
 function onlineHtml(): string {
@@ -71,7 +73,7 @@ function roomHtml(): string {
   if (!l) return `<div class="lobby-card"><p>Connecting to room ${esc(room.code)}…</p></div>`;
   const seats = Array.from({ length: l.config.playerCount }, (_, i) => {
     const p = l.players.find(x => x.seat === i);
-    return `<li class="seat" style="--pc:${PLAYER_COLORS[i]}"><span class="seat-dot"></span>${p ? `${esc(p.name)}${p.uid === l.hostUid ? ' <span class="tag">host</span>' : ''}${p.uid === room.myUid ? ' <span class="tag">you</span>' : ''}` : '<span class="muted">empty — a bot will play</span>'}</li>`;
+    return `<li class="seat" style="--pc:${PLAYER_COLORS[i]}"><span class="seat-dot"></span>${p ? `${esc(p.name)}${p.uid === l.hostUid ? ' <span class="tag">host</span>' : ''}${p.uid === room.myUid ? ' <span class="tag">you</span>' : ''}` : '<span class="muted">Empty seat: a bot will play</span>'}</li>`;
   }).join('');
   return `<div class="lobby-card">
     <h2>Room <span class="code">${esc(room.code)}</span></h2>
@@ -84,20 +86,41 @@ function roomHtml(): string {
     </div></div>`;
 }
 
+function heroHtml(): string {
+  return `<section class="title-block">
+    <div class="logo" aria-label="Office Politics">
+      <span class="logo-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      <h1 class="logo-type"><span class="w1">Office</span><span class="w2">Politics</span></h1>
+    </div>
+    <p class="tagline">Win the office. Lose your friends.</p>
+    <p class="pitch">Seven departments. Twenty-eight employees with hidden motives. Charm them, pressure them, plant moles, and climb to CEO.</p>
+    <div class="title-actions">
+      <button type="button" class="ghost" data-act="help">How to play</button>
+      <button type="button" class="ghost" data-act="theme" aria-label="Toggle light or dark theme">${theme() === 'light' ? 'Dark mode' : 'Light mode'}</button>
+    </div>
+  </section>`;
+}
+
 function lobbyHtml(): string {
-  if (s.room) return roomHtml();
-  return `<div class="lobby-card">
-    <button type="button" class="link lobby-help" data-act="help">? How to play</button>
-    <h1 class="title">Office Politics</h1>
-    <p class="muted tagline">Win the office. Lose your friends.</p>
+  const panel = s.room ? roomHtml() : `<div class="lobby-card">
     <div class="tabs" role="tablist">
-      <button type="button" role="tab" aria-selected="${s.tab === 'local'}" data-act="tab" data-tab="local">Local (pass &amp; play)</button>
+      <button type="button" role="tab" aria-selected="${s.tab === 'local'}" data-act="tab" data-tab="local">Pass &amp; play</button>
       <button type="button" role="tab" aria-selected="${s.tab === 'online'}" data-act="tab" data-tab="online">Online</button>
     </div>
     ${s.tab === 'local' ? localHtml() : onlineHtml()}
     ${s.error ? `<p class="bad">${esc(s.error)}</p>` : ''}
   </div>`;
+  return `<div class="lobby-grid${intro ? ' intro' : ''}">${heroHtml()}${panel}</div>`;
 }
+
+// ---- theme (dark is primary; light is a per-device preference)
+const THEME_KEY = 'officePolitics.theme';
+const theme = () => document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+function applyTheme(t: string | null) {
+  if (t === 'light') document.documentElement.dataset.theme = 'light';
+  else delete document.documentElement.dataset.theme;
+}
+try { applyTheme(localStorage.getItem(THEME_KEY)); } catch { /* private mode */ }
 
 function buildConfig(players: GameConfig['players']): GameConfig {
   return {
@@ -108,11 +131,14 @@ function buildConfig(players: GameConfig['players']): GameConfig {
 
 /** Mounts the lobby. `onGame` receives a ready client. Returns dispose. */
 export function mountLobby(root: HTMLElement, onGame: (c: GameClient) => void): () => void {
-  root.innerHTML = '<div class="lobby"></div>';
-  const el = root.querySelector<HTMLElement>('.lobby')!;
+  // The animated backdrop is painted once; only .lobby-main re-renders, so it never restarts.
+  root.innerHTML = `<div class="lobby"><div class="lobby-bg" aria-hidden="true"><i class="blinds"></i><i class="lamp"></i><i class="hexes"></i></div>
+    <div class="lobby-main"></div></div>`;
+  const el = root.querySelector<HTMLElement>('.lobby-main')!;
   let unsubRoom: (() => void) | null = null;
   let disposed = false;
-  const render = () => { if (!disposed) el.innerHTML = lobbyHtml(); };
+  intro = true;
+  const render = () => { if (!disposed) { el.innerHTML = lobbyHtml(); intro = false; } };
 
   async function enterRoom(p: Promise<RoomHandle>) {
     s.busy = true; s.error = ''; render();
@@ -159,6 +185,12 @@ export function mountLobby(root: HTMLElement, onGame: (c: GameClient) => void): 
     },
     'room-leave': () => leaveRoom(),
     'help': () => openHelp(),
+    'theme': () => {
+      const next = theme() === 'light' ? 'dark' : 'light';
+      applyTheme(next);
+      try { localStorage.setItem(THEME_KEY, next); } catch { /* private mode */ }
+      render();
+    },
   };
 
   const onClick = (e: MouseEvent) => {

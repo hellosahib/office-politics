@@ -1,4 +1,4 @@
-// §34 save screen (pending 'save') and §67 end-turn summary (pending 'summary').
+// §34 save screen (pending 'save') and §67 end-turn summary (pending 'summary') as a report sheet.
 import type { GameView } from '../engine/types';
 import { MAX_RESERVE, RANK_LABEL } from '../engine/types';
 import type { GameClient } from '../client';
@@ -16,38 +16,42 @@ export function saveHtml(view: GameView, client: GameClient): string {
       <input type="checkbox" data-act="save-toggle" data-id="${esc(c.id)}" ${on ? 'checked' : ''} ${!on && !canAdd ? 'disabled' : ''}>
       ${cardHtml(c)}</label>`;
   }).join('');
-  return `<div class="float-center save" role="dialog" aria-label="Save cards">
-    <h2>Save cards</h2>
-    <p class="muted">1 Influence per card. Unsaved cards are discarded. Reserve: ${me.reserveCount}/${MAX_RESERVE} used, room for ${room}. Influence left: ${me.influence}.</p>
+  return `<div class="float-center sheet save" role="dialog" aria-label="Save cards" data-enter="save:${view.actionCount}:${client.me}" data-anim="rise">
+    <div class="sheet-kicker">Before you go</div>
+    <h2>Save cards to your reserve</h2>
+    <p class="muted">1 Influence per card; unsaved cards are discarded. Reserve ${me.reserveCount}/${MAX_RESERVE}, room for ${room}. Influence left: ${me.influence}.</p>
     <div class="save-list">${cards || '<div class="muted">No cards left in hand.</div>'}</div>
-    <div class="row"><span>Saving ${n} · cost ${n}</span>
+    <div class="row sheet-foot"><span>Saving <b class="num">${n}</b> · cost <b class="num">${n}</b></span>
       <button type="button" class="primary" data-act="save-confirm">Confirm</button></div>
   </div>`;
 }
 
-const list = (xs: string[]) => (xs.length ? xs.join(', ') : '—');
+const list = (xs: string[]) => (xs.length ? xs.join(', ') : '<span class="nil">none</span>');
 
 export function summaryHtml(view: GameView, client: GameClient): string {
   const s = view.turnSummary;
   if (!isMine(view, client) || view.pending.kind !== 'summary' || !s) return '';
-  const rows: [string, string][] = [
-    ['Influence spent', String(s.influenceSpent)],
+  const change = s.employeesChanged.map(c => `<li><b>${empName(view, c.employeeId)}</b> <span class="loy loy-${c.from}">${c.from}</span> → <span class="loy loy-${c.to}">${c.to}</span></li>`).join('');
+  const kpi = (label: string, value: string | number, cls = '') => `<div class="kpi ${cls}"><span class="num">${value}</span><span class="label">${label}</span></div>`;
+  const rows: [string, string, string?][] = [
     ['Cards played', list(s.cardsPlayed.map(esc))],
     ['Cards saved', list(s.cardsSaved.map(esc))],
-    ['Employees changed', list(s.employeesChanged.map(c => `${empName(view, c.employeeId)}: ${c.from} → ${c.to}`))],
-    ['New Rebels', list(s.newRebels.map(id => empName(view, id)))],
-    ['Departments captured', list(s.departmentsCaptured.map(id => deptName(view, id)))],
-    ['Departments lost', list(s.departmentsLost.map(id => deptName(view, id)))],
-    ['Management penalty', s.managementPenalty ? '<span class="bad">Yes — Internal Instability</span>' : 'No'],
+    ['New Rebels', list(s.newRebels.map(id => empName(view, id))), s.newRebels.length ? 'bad' : ''],
+    ['Departments captured', list(s.departmentsCaptured.map(id => deptName(view, id))), s.departmentsCaptured.length ? 'good' : ''],
+    ['Departments lost', list(s.departmentsLost.map(id => deptName(view, id))), s.departmentsLost.length ? 'bad' : ''],
+    ['Management penalty', s.managementPenalty ? 'Yes: Internal Instability' : '<span class="nil">no</span>', s.managementPenalty ? 'bad' : ''],
     ['Promises created', list(s.promisesCreated.map(id => empName(view, id)))],
     ['Promises resolved', list(s.promisesResolved.map(id => empName(view, id)))],
-    ['Mole activity', list(s.moleActivity.map(esc))],
-    ['Promotion', s.promotion ? `<b class="good">${RANK_LABEL[s.promotion]}</b>` : '—'],
+    ['Mole activity', list(s.moleActivity.map(esc)), s.moleActivity.length ? 'mole' : ''],
+    ['Promotion', s.promotion ? RANK_LABEL[s.promotion] : '<span class="nil">none</span>', s.promotion ? 'gold' : ''],
   ];
-  return `<div class="float-center summary" role="dialog" aria-label="Turn summary">
+  return `<div class="float-center sheet report" role="dialog" aria-label="Turn summary" data-enter="summary:${view.actionCount}:${client.me}" data-anim="report">
+    <div class="report-head"><span class="sheet-kicker">End of turn report</span><span class="report-ref">Round ${view.round} · ${esc(view.players[s.player]?.name ?? '')}</span></div>
     <h2>Turn summary</h2>
-    <table class="kv">${rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table>
-    <div class="row"><button type="button" class="primary" data-act="end-turn">End Turn</button></div>
+    <div class="kpis">${kpi('Influence spent', s.influenceSpent)}${kpi('Cards played', s.cardsPlayed.length)}${kpi('Employees moved', s.employeesChanged.length)}${kpi('Captured', s.departmentsCaptured.length, s.departmentsCaptured.length ? 'good' : '')}</div>
+    ${change ? `<div class="sec-title">Employees changed</div><ul class="changes">${change}</ul>` : ''}
+    <table class="kv report-kv">${rows.map(([k, v, cls]) => `<tr class="${cls ?? ''}"><th>${k}</th><td>${v}</td></tr>`).join('')}</table>
+    <div class="row sheet-foot"><span class="muted small">Review, then pass the turn.</span><button type="button" class="primary" data-act="end-turn">End Turn</button></div>
   </div>`;
 }
 
