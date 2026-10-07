@@ -40,7 +40,7 @@ function playsFromLog(view: GameView, player: number): Played[] {
     if (!e) continue;
     const mv = /(\w+) → (\w+)/.exec(m[3]) ?? /from (\w+) to (\w+)/.exec(m[3]);
     const band = /Strong Success/.test(m[3]) ? 'Strong Success' : /Success/.test(m[3]) ? 'Standard Success'
-      : /Blocked/.test(m[3]) ? 'Blocked' : /Fail/.test(m[3]) ? 'Failure' : mv && mv[1] !== mv[2] ? 'Success' : 'No effect';
+      : /Blocked/.test(m[3]) ? 'Blocked' : /Fail/.test(m[3]) ? 'Failure' : mv && mv[1] !== mv[2] ? 'Success' : 'Failure';
     out.push({ card: m[1], empId: e.id, target: e.name, band, from: mv?.[1] ?? null, to: mv?.[2] ?? null });
   }
   return out;

@@ -216,6 +216,9 @@ export interface Results { check(view: GameView, client: GameClient): void; curr
 export function createResults(root: HTMLElement): Results {
   let lastCard: string | undefined;
   let lastReveal: number | undefined;
+  // Banners that arrive while the event outcome modal is open wait until it is closed.
+  let deferred: (() => void)[] = [];
+  const show = (f: () => void) => { if (ui.eventResultOpen) deferred.push(f); else f(); };
   let lastEvent: number | undefined;
   let snap: { ev: NonNullable<GameView['activeEvent']>; from: number; player: PlayerId; key: string } | null = null;
   let open: EventResult | null = null;
@@ -224,10 +227,11 @@ export function createResults(root: HTMLElement): Results {
     check(view, client) {
       const c = latestCard(view, client);
       const ck = c?.key ?? '';
-      if (lastCard !== undefined && ck !== lastCard && c) showBanner(root, view, c);
+      if (!ui.eventResultOpen && deferred.length) { const d = deferred; deferred = []; d.slice(-1).forEach(f => f()); }
+      if (lastCard !== undefined && ck !== lastCard && c) show(() => showBanner(root, view, c));
       lastCard = ck;
       const rv = latestReveal(view, client);
-      if (lastReveal !== undefined && rv && rv.i > lastReveal) showRevealBanner(root, rv.html, rv.priv);
+      if (lastReveal !== undefined && rv && rv.i > lastReveal) show(() => showRevealBanner(root, rv.html, rv.priv));
       lastReveal = Math.max(lastReveal ?? -1, rv?.i ?? -1);
 
       const er = (view as GameView & { lastEventResult?: EventResult }).lastEventResult;

@@ -150,7 +150,8 @@ export function createCinema(root: HTMLElement, render: () => void): Cinema {
   }
 
   async function run() {
-    if (running || ui.introFor !== null || !queue.length) return;
+    // Wait for the intro and for a pending event outcome to be read first.
+    if (running || ui.introFor !== null || ui.eventResultOpen || !queue.length) return;
     running = true; skipping = false; live.length = 0;
     const overlay = div('cinema', '<span class="cinema-skip">Click to skip</span>');
     overlay.addEventListener('click', skip);

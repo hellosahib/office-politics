@@ -404,7 +404,7 @@ button.card:hover:not([aria-disabled="true"]) { --lift: -8px; box-shadow: 0 24px
 /* ---------------------------------------------------------------- event incident card */
 .event-panel {
   position: absolute; z-index: 9; top: calc(var(--topbar-h) + 14px); left: 50%; transform: translateX(-50%);
-  width: min(600px, calc(100vw - 24px)); max-height: calc(100% - var(--topbar-h) - var(--hand-h) - 36px); overflow: auto;
+  width: min(600px, calc(100vw - 24px)); max-height: calc(100% - var(--topbar-h) - 36px); /* may overlap the hand: cards are not playable during an event */ overflow: auto;
   background: var(--glass-strong); border: 1px solid var(--line-2); border-radius: var(--r-panel);
   box-shadow: var(--shadow), var(--inner), 0 0 0 1px color-mix(in srgb, var(--ev) 25%, transparent), 0 0 60px -20px var(--ev);
   backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);

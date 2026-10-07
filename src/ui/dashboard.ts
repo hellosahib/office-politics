@@ -45,7 +45,9 @@ export function dashboardHtml(view: GameView, client: GameClient): string {
       : myTurn ? `Your move: ${PHASE_LABEL[view.pending.kind]}` : `Waiting for ${pname(view, pendingPlayer(view.pending))}`;
     const canExpose = myTurn && view.pending.kind === 'play';
     // "Your intel": newest first, each with portrait, department and the trait it revealed.
-    const intel = [...(me.intel ?? [])].reverse().map(i => {
+    // ponytail: entries carrying deptId come from the newer engine, which already sorts newest first.
+    const raw = me.intel ?? [];
+    const intel = (raw.length && 'deptId' in raw[0] ? raw : [...raw].reverse()).map(i => {
       const e = view.employees.find(x => x.id === i.employeeId);
       const already = (e?.hiddenTrait1 === i.trait && e.hiddenTrait1Public) || (e?.hiddenTrait2 === i.trait && e.hiddenTrait2Public);
       return `<li class="intel-item">${e ? `<img src="${portraitDataUrl(e)}" alt="" width="30" height="38">` : ''}

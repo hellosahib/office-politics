@@ -5,7 +5,7 @@
 //       i "Meet your team" intro → deal → event flip · d next turn: discard + deal + event flip
 //       o event outcome modal (Global) · b card banner (success) · f card banner (failure) · r trait reveal banners
 import type { GameClient } from '../client';
-import type { Action, EmployeeId, GameView, Pending, PlayerId, Prediction } from '../engine/types';
+import type { Action, EmployeeId, GameView, Pending, PlayerId, PlayerView, Prediction } from '../engine/types';
 import { AGENDAS, buildEventDeck, buildInfluenceDeck } from '../content';
 import { makeMockView } from './mockView';
 import { mountGame } from '../ui/game';
@@ -20,6 +20,10 @@ const emit = () => listeners.forEach(l => l());
 const events = buildEventDeck('full');
 const deck = buildInfluenceDeck('full');
 
+type AE = NonNullable<GameView['activeEvent']>;
+/** Mock active event; affectedDeptIds is filled the way the engine does (Local: its dept). */
+const ae = (x: Omit<AE, 'affectedDeptIds'>) => ({ affectedDeptIds: x.deptId ? [x.deptId] : [], ...x }) as AE;
+
 function base(): GameView {
   const v = makeMockView('full');
   const p0 = v.players[0];
@@ -27,7 +31,8 @@ function base(): GameView {
   p0.reserve = [deck[deck.length - 1]];
   p0.reserveCount = 1;
   p0.agenda = AGENDAS[0];
-  p0.intel = [{ employeeId: 'neha-kapoor', trait: 'Ambitious', weight: 2 }, { employeeId: 'sahib-singh', trait: 'CreditHungry', weight: 2 }];
+  const intel = [{ employeeId: 'sahib-singh', deptId: 'engineering', trait: 'CreditHungry' as const, weight: 2 }, { employeeId: 'neha-kapoor', deptId: 'product', trait: 'Ambitious' as const, weight: 2 }];
+  p0.intel = intel as PlayerView['intel']; // newest first; deptId per the newer engine view
   return v;
 }
 
@@ -39,22 +44,22 @@ function scenario(key: string): void {
   const global = events.find(e => e.type === 'Global')!;
   switch (key) {
     case '1':
-      view.activeEvent = { card: local, deptId: 'engineering', votes: {}, targets: {}, remaining: [0], outcome: null, votesVisible: false };
+      view.activeEvent = ae({ card: local, deptId: 'engineering', votes: {}, targets: {}, remaining: [0], outcome: null, votesVisible: false });
       set({ kind: 'eventChoice', player: 0, eventId: local.id, deptId: 'engineering' }, 'event');
       break;
     case '2':
-      view.activeEvent = { card: global, deptId: null, votes: { 1: 'A' }, targets: {}, remaining: [0, 2], outcome: null, votesVisible: false };
+      view.activeEvent = ae({ card: global, deptId: null, votes: { 1: 'A' }, targets: {}, remaining: [0, 2], outcome: null, votesVisible: false });
       set({ kind: 'eventChoice', player: 0, eventId: global.id, deptId: null }, 'event');
       break;
     case '3': {
       const promo = events.find(e => e.options.some(o => o.effects.some(f => f.kind === 'honorPromise'))) ?? local;
       const opt = promo.options.find(o => o.effects.some(f => f.kind === 'honorPromise'))?.id ?? 'A';
-      view.activeEvent = { card: promo, deptId: 'engineering', votes: {}, targets: {}, remaining: [0], outcome: null, votesVisible: false };
+      view.activeEvent = ae({ card: promo, deptId: 'engineering', votes: {}, targets: {}, remaining: [0], outcome: null, votesVisible: false });
       set({ kind: 'eventTarget', player: 0, eventId: promo.id, optionId: opt, choose: 'employee', candidates: ['sahib-singh', 'riya-shah', 'kabir-anand', 'mehul-sethi'] }, 'event');
       break;
     }
     case '4':
-      view.activeEvent = { card: events.find(e => e.type === 'Reveal') ?? local, deptId: null, votes: {}, targets: {}, remaining: [], outcome: null, votesVisible: false };
+      view.activeEvent = ae({ card: events.find(e => e.type === 'Reveal') ?? local, deptId: null, votes: {}, targets: {}, remaining: [], outcome: null, votesVisible: false });
       set({ kind: 'revealChoice', player: 0, employeeId: 'yash-malhotra', trait: 'Cautious', weight: 2 }, 'event');
       break;
     case '5': set({ kind: 'play', player: 0, focus: null }, 'play'); break;
@@ -64,13 +69,13 @@ function scenario(key: string): void {
       break;
     case 'i':
       view = base(); view.config = { ...view.config, seed: ++seed }; view.round = 1; view.actionCount = 0;
-      view.activeEvent = { card: local, deptId: 'engineering', votes: {}, targets: {}, remaining: [0], outcome: null, votesVisible: false };
+      view.activeEvent = ae({ card: local, deptId: 'engineering', votes: {}, targets: {}, remaining: [0], outcome: null, votesVisible: false });
       set({ kind: 'eventChoice', player: 0, eventId: local.id, deptId: 'engineering' }, 'event');
       break;
     case 'd': {
       const fresh = deck.filter(c => !view.players[0].hand!.some(h => h.templateId === c.templateId)).slice(0, 4).map((c, i) => ({ ...c, id: `${c.id}~${seed++}${i}` }));
       view.players[0].hand = fresh; view.players[0].handCount = 4; view.round = 4;
-      view.activeEvent = { card: global, deptId: null, votes: {}, targets: {}, remaining: [0, 1, 2], outcome: null, votesVisible: false };
+      view.activeEvent = ae({ card: global, deptId: null, votes: {}, targets: {}, remaining: [0, 1, 2], outcome: null, votesVisible: false });
       set({ kind: 'eventChoice', player: 0, eventId: global.id, deptId: null }, 'event');
       break;
     }
@@ -104,7 +109,7 @@ function scenario(key: string): void {
       view.log = [...view.log,
         { round: 3, turn: 1, text: 'Revealed: Riya Shah is Cautious (+2).', visibility: 'public', tag: 'reveal' },
         { round: 3, turn: 0, text: 'Intel: Kabir Anand is Gossip (+2).', visibility: 0, tag: 'reveal' }];
-      view.players[0].intel = [...view.players[0].intel!, { employeeId: 'kabir-anand', trait: 'Gossip', weight: 2 }];
+      view.players[0].intel = [{ employeeId: 'kabir-anand', deptId: 'engineering', trait: 'Gossip', weight: 2 }, ...view.players[0].intel!] as PlayerView['intel'];
       break;
     case '7': set({ kind: 'save', player: 0 }, 'save'); view.players[0].influence = 2; break;
     case '8':
@@ -131,7 +136,7 @@ function scenario(key: string): void {
       }]));
       break;
     case 'w':
-      view.activeEvent = { card: global, deptId: null, votes: { 0: 'A', 1: 'B', 2: 'A' }, targets: {}, remaining: [], outcome: 'A', votesVisible: true };
+      view.activeEvent = ae({ card: global, deptId: null, votes: { 0: 'A', 1: 'B', 2: 'A' }, targets: {}, remaining: [], outcome: 'A', votesVisible: true });
       set({ kind: 'eventChoice', player: 1, eventId: global.id, deptId: null }, 'event');
       view.currentPlayer = 1;
       break;

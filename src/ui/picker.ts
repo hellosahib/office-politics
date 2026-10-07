@@ -64,7 +64,9 @@ function groupedHtml(view: GameView, ids: string[], row: (e: EmployeeView) => st
     const e = view.employees.find(x => x.id === id);
     if (e) by.set(e.deptId, [...(by.get(e.deptId) ?? []), e]);
   }
-  return [...by].map(([d, es]) => `<section class="pk-dept">
+  // Your departments first, then Neutral ones, then rivals'.
+  const rank = (d: string) => { const l = view.departments.find(x => x.id === d)?.teamLead; return l === view.viewer ? 0 : l === null ? 1 : 2; };
+  return [...by].sort((a, b) => rank(a[0]) - rank(b[0])).map(([d, es]) => `<section class="pk-dept">
       <div class="pk-dept-head"><b>${esc(view.departments.find(x => x.id === d)?.name ?? d)}</b><span class="muted small">Lead ${leadName(view, d)}</span></div>
       ${es.map(row).join('')}</section>`).join('');
 }
