@@ -1,5 +1,7 @@
 # Office Politics
 
+**Play it now:** https://hellosahib.github.io/office-politics/ (deployed from `main` by GitHub Actions).
+
 A 3–4 player strategy game about winning over the employees of a company, one department at a time:
 play influence cards, survive events, plant moles, and become CEO (Takeover) or win the vote (Election).
 Rules: [docs/SPEC.md](docs/SPEC.md). Every implementation choice: [docs/DECISIONS.md](docs/DECISIONS.md).
