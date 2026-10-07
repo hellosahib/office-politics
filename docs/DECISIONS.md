@@ -459,3 +459,20 @@ relative base is safe. `VITE_BASE` can still force an absolute base if ever need
 
 **Note.** This machine's `gh` is logged in as the Keenai work account, not `hellosahib`; pushing
 to the studio account must be done by the user (or after `gh auth login` as that account).
+
+---
+
+## D36. Local games are persisted to sessionStorage and can be resumed
+
+**Issue.** A browser reload (accidental, or a Vite hot reload during development) threw away an
+in-progress pass-and-play game, because the whole game lived in memory.
+
+**Options.** (1) Accept it. (2) Save the full `GameState` to `sessionStorage` after every action
+and offer "Resume" on the lobby. (3) Save the action log and replay it (what online mode does).
+
+**Chosen: 2.** The state is already plain JSON and small (tens of KB); `new Game(state)`
+rehydrates it. `sessionStorage` (not `localStorage`) so a closed tab starts fresh and two tabs
+don't fight over one save. `leave()` clears it. Online games need nothing: Firestore is the
+source of truth and a reload just re-subscribes.
+
+**Where.** `src/net/localClient.ts` (`resumeLocalClient`, `persist`), `src/main.ts` (`offerResume`).
