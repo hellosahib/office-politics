@@ -51,7 +51,7 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
   let toastTimer = 0;
   let firstPaint = true;
   const cinema = createCinema(el, () => render());
-  const results = createResults(el);
+  const results = createResults(el, () => render());
 
   const ctx: Ctx = {
     get view() { return client.getView(); },

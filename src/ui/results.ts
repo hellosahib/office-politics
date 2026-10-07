@@ -213,8 +213,19 @@ function deriveEvent(view: GameView, snap: { ev: NonNullable<GameView['activeEve
 // ---------------------------------------------------------------- watcher
 export interface Results { check(view: GameView, client: GameClient): void; current(): EventResult | null }
 
-export function createResults(root: HTMLElement): Results {
+/** Outcome modals for a BOT's turn close themselves after this long (owner request). */
+const BOT_OUTCOME_MS = 4000;
+
+export function createResults(root: HTMLElement, rerender: () => void = () => {}): Results {
   let lastCard: string | undefined;
+  let autoClose: ReturnType<typeof setTimeout> | undefined;
+  const openOutcome = (r: EventResult, view: GameView) => {
+    open = r; ui.eventResultOpen = true;
+    clearTimeout(autoClose);
+    if (view.players[view.currentPlayer]?.isBot) {
+      autoClose = setTimeout(() => { if (open === r && ui.eventResultOpen) { ui.eventResultOpen = false; rerender(); } }, BOT_OUTCOME_MS);
+    }
+  };
   let lastReveal: number | undefined;
   // Banners that arrive while the event outcome modal is open wait until it is closed.
   let deferred: (() => void)[] = [];
@@ -236,7 +247,7 @@ export function createResults(root: HTMLElement): Results {
 
       const er = (view as GameView & { lastEventResult?: EventResult }).lastEventResult;
       if (er) {
-        if (lastEvent !== undefined && er.actionCount !== lastEvent) { open = er; ui.eventResultOpen = true; }
+        if (lastEvent !== undefined && er.actionCount !== lastEvent) openOutcome(er, view);
         lastEvent = er.actionCount;
         return;
       }
@@ -244,7 +255,7 @@ export function createResults(root: HTMLElement): Results {
       const ev = view.activeEvent;
       const key = ev ? `${view.round}:${view.currentPlayer}:${ev.card.id}` : '';
       if (snap && snap.key !== key) {
-        if (lastEvent !== undefined) { open = deriveEvent(view, snap); ui.eventResultOpen = true; }
+        if (lastEvent !== undefined) openOutcome(deriveEvent(view, snap), view);
         snap = null;
       }
       if (ev && !snap) {
