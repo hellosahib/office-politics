@@ -78,7 +78,7 @@ function roomHtml(): string {
   return `<div class="lobby-card">
     <h2>Room <span class="code">${esc(room.code)}</span></h2>
     <p class="muted">Share this code. ${esc(l.config.mode)}${l.config.rounds && l.config.mode === 'Election' ? ` · ${l.config.rounds} rounds` : ''} · ${l.config.board} board · ${l.config.playerCount} players</p>
-    <ul class="seats">${seats}</ul>
+    <ul class="seats room-seats">${seats}</ul>
     ${s.error ? `<p class="bad">${esc(s.error)}</p>` : ''}
     <div class="row">
       ${room.isHost ? `<button type="button" class="primary big-btn" data-act="room-start" ${s.busy || l.status === 'started' ? 'disabled' : ''}>Start</button>` : '<span class="muted">Waiting for the host to start…</span>'}
