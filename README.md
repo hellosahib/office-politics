@@ -17,6 +17,10 @@ npm run sim      # headless bot-vs-bot games (balance testing)
 
 ## Online play (Firebase, optional)
 
+Production uses Firebase project **`office-politics-tgd`** (owner: thegeekdogs@gmail.com): Anonymous Auth + Firestore
+(`nam5`), rules from `firestore.rules`, web config stored as the repo's `VITE_FIREBASE_*` Actions secrets.
+Re-deploy rules/auth config with `npx firebase deploy --only firestore,auth`.
+
 Online rooms use Firestore + Anonymous Auth, client-side only (D2). Without config the game
 simply hides the online option.
 
