@@ -376,6 +376,8 @@ export interface ActiveEvent {
   remaining: PlayerId[];
   /** Winning option after majority resolution. */
   outcome: 'A' | 'B' | null;
+  /** Engine bookkeeping: players whose option effects are still to be applied (after voting). */
+  queue?: PlayerId[];
 }
 
 export interface GameConfig {
@@ -415,6 +417,9 @@ export interface GameState {
   scores: Record<string, ScoreBreakdown> | null;
   /** Monotonic count of successfully applied actions (used by net layer). */
   actionCount: number;
+  /** Engine bookkeeping: prompts (reveal choices, accusations) raised while an event resolves,
+   *  handled one at a time before the turn continues. */
+  interrupts?: Pending[];
 }
 
 export interface ScoreBreakdown {

@@ -1,0 +1,120 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed data model (see src/net/firestoreClient.ts)
+// ===============================================================
+// rooms/{code}                      code = 6 chars from ABCDEFGHJKLMNPQRSTUVWXYZ23456789
+//   code: string          immutable, == doc id
+//   hostUid: string       immutable, creator's anonymous uid
+//   status: 'waiting' | 'started'
+//   config: map           immutable lobby config (playerCount 3|4, mode, board, rounds?)
+//   players: list<{uid, name, seat}>   grows by one per join while 'waiting'
+//   uids: list<string>    mirror of players[].uid (rules can test `in` on it)
+//   actionCount: int      == number of action docs; bumped with every action
+//   createdAt: timestamp  immutable
+//   seed: int, startedPlayers: list<{name, isBot}>   set once by the host on start
+//
+// rooms/{code}/actions/{seq}        seq zero-padded to 6 digits
+//   seq: int, action: map (engine Action), uid: string (writer), at: timestamp
+//   Immutable. Engine-level legality is checked by every client on replay (D2).
+//
+// Prototype rules: review before sharing widely. Nothing is ever deleted.
+// ===============================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function validName(n) { return n is string && n.size() >= 1 && n.size() <= 24; }
+    function pad6(n) {
+      return n < 10 ? '00000' + string(n)
+           : n < 100 ? '0000' + string(n)
+           : n < 1000 ? '000' + string(n)
+           : n < 10000 ? '00' + string(n)
+           : n < 100000 ? '0' + string(n)
+           : string(n);
+    }
+
+    match /rooms/{code} {
+      allow read: if signedIn();   // needed to join by code; spectating is fine
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['code', 'hostUid', 'status', 'config', 'players', 'uids', 'actionCount', 'createdAt'])
+        && request.resource.data.code == code
+        && code.matches('^[A-HJ-NP-Z2-9]{6}$')
+        && request.resource.data.hostUid == request.auth.uid
+        && request.resource.data.status == 'waiting'
+        && request.resource.data.config is map
+        && request.resource.data.config.playerCount in [3, 4]
+        && request.resource.data.uids == [request.auth.uid]
+        && request.resource.data.players.size() == 1
+        && request.resource.data.players[0].keys().hasOnly(['uid', 'name', 'seat'])
+        && request.resource.data.players[0].uid == request.auth.uid
+        && request.resource.data.players[0].seat == 0
+        && validName(request.resource.data.players[0].name)
+        && request.resource.data.actionCount == 0
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if signedIn() && (isJoin() || isStart() || isActionBump());
+      allow delete: if false;
+
+      function before() { return resource.data; }
+      function after() { return request.resource.data; }
+      function changedOnly(fields) { return after().diff(before()).affectedKeys().hasOnly(fields); }
+
+      // A new player appends exactly themselves to the next seat while the room is open.
+      function isJoin() {
+        let n = before().players.size();
+        return before().status == 'waiting'
+          && changedOnly(['players', 'uids'])
+          && !(request.auth.uid in before().uids)
+          && n < before().config.playerCount
+          && after().uids == before().uids.concat([request.auth.uid])
+          && after().players.size() == n + 1
+          && after().players[0:n] == before().players
+          && after().players[n].keys().hasOnly(['uid', 'name', 'seat'])
+          && after().players[n].uid == request.auth.uid
+          && after().players[n].seat == n
+          && validName(after().players[n].name);
+      }
+
+      // Host starts once: seed + full seat list (humans + bots).
+      function isStart() {
+        return request.auth.uid == before().hostUid
+          && before().status == 'waiting'
+          && after().status == 'started'
+          && changedOnly(['status', 'seed', 'startedPlayers'])
+          && after().seed is int
+          && after().startedPlayers is list
+          && after().startedPlayers.size() == before().config.playerCount;
+      }
+
+      // A player bumps the counter by one, and only together with creating that action doc.
+      function isActionBump() {
+        return request.auth.uid in before().uids
+          && before().status == 'started'
+          && changedOnly(['actionCount'])
+          && after().actionCount == before().actionCount + 1
+          && existsAfter(/databases/$(database)/documents/rooms/$(code)/actions/$(pad6(before().actionCount)));
+      }
+
+      match /actions/{actionId} {
+        allow read: if signedIn();
+
+        // Written in the same transaction as the counter bump, so seq is gap-free and unique.
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['seq', 'action', 'uid', 'at'])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.action is map
+          && request.resource.data.at == request.time
+          && request.resource.data.seq is int
+          && actionId == pad6(request.resource.data.seq)
+          && request.auth.uid in get(/databases/$(database)/documents/rooms/$(code)).data.uids
+          && get(/databases/$(database)/documents/rooms/$(code)).data.status == 'started'
+          && get(/databases/$(database)/documents/rooms/$(code)).data.actionCount == request.resource.data.seq
+          && getAfter(/databases/$(database)/documents/rooms/$(code)).data.actionCount == request.resource.data.seq + 1;
+
+        allow update, delete: if false;   // the log is immutable
+      }
+    }
+  }
+}

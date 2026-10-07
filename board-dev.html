@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Board dev</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0f1115; font: 14px system-ui, sans-serif; }
+      #board { position: fixed; inset: 0; }
+      #bar { position: fixed; top: 8px; left: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+      #bar button { background: #222833; color: #e6e9ef; border: 1px solid #39404d; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+      #out { position: fixed; bottom: 8px; left: 8px; color: #9aa0a6; }
+    </style>
+  </head>
+  <body>
+    <div id="board"></div>
+    <div id="bar">
+      <button id="mode">Toggle full/mini</button>
+      <button id="sel">Toggle selectable subset</button>
+      <button id="hl">Toggle highlight</button>
+      <button id="focus">Cycle focus</button>
+    </div>
+    <div id="out"></div>
+    <script type="module" src="/src/dev/boardDev.ts"></script>
+  </body>
+</html>

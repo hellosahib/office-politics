@@ -345,3 +345,117 @@ If none exists the event is discarded with a log line.
   Arjun Mehta → **Sahib Singh** (Engineering), Tara Bansal → **Tanya Jain** (Product), Nandini: Meera Joshi → **Nandini Jain** (Finance).
   The same three names are the default seat names in the lobby (`DEFAULT_PLAYER_NAMES`). Swap the slots in
   `src/content/employees.ts` if you'd rather they sit in different departments.
+
+---
+
+## D25. Influence refresh timing and the off-turn pool
+
+**Issue.** §53 refreshes Influence *after* the Event phase, which would wipe any Influence an event
+grants the active player (e.g. CEO Town Hall "+1 Influence") and make a Private Reveal on your own
+Reveal event be paid from last turn's leftovers. Off-turn players (Global events) have no defined pool.
+
+**Chosen.** Refresh happens at the very start of the turn, before the event: `influence = rankMax +
+banked`. At end of turn unused Influence is set to 0 (§7 no carry-over). Influence gained/lost while it
+is *not* your turn (Global events) is "banked" and added to your next refresh; an off-turn Private Reveal
+must be paid from that bank, otherwise only Public is allowed. Management cost is still paid after the
+event (§9). Consequence: because every rank's max ≥ its management cost, Internal Instability only
+happens when an event drained Influence first (the simulator shows ~0% with the stub decks).
+
+**Where.** `src/engine/game.ts` → `startTurn`, `nextTurn`, `afterEvent`.
+
+## D26. Round 1 does not draw
+
+§5 deals 4 cards at setup and §53 draws 4 every turn. Setup deals 4; the draw phase is skipped in
+round 1 so nobody starts with 8. **Where.** `game.ts` → `setup`, `afterEvent`.
+
+## D27. Last player standing / first player
+
+If at most one player is left non-eliminated, the game ends immediately and that player is CEO (any
+mode; scores are still filled). Seat 0 holds the first-player marker in round 1. **Where.** `rules.ts` → `checkEnd`.
+
+## D28. Planting a mole on an already-moled employee
+
+Making it illegal would leak the other mole's existence for free through `legalTargets` (§57). Instead
+it is illegal only on your *own* mole; on someone else's the card and Influence are spent and the plant
+silently fails (private notice to the planter). **Where.** `rules.ts` → `checkPlay`, `resolvePlay`.
+
+## D29. Accusation details
+
+The accused must be another non-eliminated player (no self-accusation). After either verdict the mole is
+removed at once (§44 says it "expires normally", but an exposed mole can no longer act secretly). A mole
+exposed in a department with no Team Lead is dismissed with no accusation. A wrong accusation sets the
+employee straight to Skeptical (may be a two-state drop from Favorable). **Where.** `game.ts` → `accuse`, `rules.ts` → `investigate`.
+
+## D30. What the victim of a Silent Block / Loyalty Lock sees
+
+Publicly the play reads "Failure". The actor's private explanation still shows the real score and
+"→ no effect". Rebel Pressure fires whenever a *led* department sits at exactly 2 rebels while an unused
+Rebel Pressure mole (not the lead's own) is in it — including a department already at 2 when planted.
+
+## D31. Reserve cards and trading
+
+Reserve (saved) cards are playable on later turns like hand cards. `giveCard` may be used by any
+non-eliminated player whenever the engine is in a `play` phase (anyone's), not only by the active player.
+`legalTargets` before a focus is chosen uses the focus implied by the card mode (Both → own dept = Manage).
+
+## D32. Score breakdown units and counting
+
+`ScoreBreakdown` fields are **points** (dept ×10, Loyal ×2, …) so `total` is their sum. Loyal/Favorable
+employees count board-wide when aligned to the player; Rebels count only inside departments the player
+leads. Final tie-breaks after §24: non-eliminated first, then lower seat. Agendas: Stabilizer requires
+owning ≥1 department; People Manager requires ≥1 Loyalist.
+
+## D33. View sentinels for masked data
+
+Contract fields that are non-nullable but secret use sentinels in other players' views: a pending
+`revealChoice` shows `weight: -1` and `trait` = the employee's permanent trait; an exposed mole whose
+planter is not known to the viewer shows `creator: -1`.
+
+## D34. Movement edge cases
+
+- Positive moves from events or ripples never flip an employee Favorable/Loyal toward a rival (D4 generalised);
+  they simply don't happen. Positive event moves set the owner to the player whose department it is.
+- Failure backfires (`reverse`, `ripple`) and promise expiry have no actor: owners are unchanged and a
+  Rebel created this way gets a §14A inclination.
+- `severity` only worsens **Local** events: each negative `loyalty` effect adds `severity` extra targets,
+  then severity drops by 1.
+- Corporate Fixer "negative" = loyalty −1, influence < 0, severity > 0, makeRebel, rebelPressure,
+  breakPromises. Off-turn players (Global) count it at once since they have no management check that turn.
+
+---
+
+## D35. Deploying next to the existing thegeekdogs.com site (2026-10-07 investigation)
+
+**Issue.** The user wants the game on thegeekdogs.com "as another subdomain or /path so it doesn't
+remove the existing website".
+
+**What I found (DNS + HTTP headers + GitHub API, read-only).**
+- `thegeekdogs.com` → Cloudflare nameservers, response carries GitHub Pages headers
+  (`x-github-request-id`, Fastly cache) → it is a GitHub Pages site behind Cloudflare DNS.
+- The site links `github.com/hellosahib` and `github.com/Tanya-jain99`; the only repo with Pages
+  enabled is **`hellosahib/thegeekdogs`** (a *project* repo). Neither account has a `<user>.github.io`
+  user-site repo (`https://hellosahib.github.io/` → 404).
+- `https://thegeekdogs.com/office-politics/` → 404 today.
+
+**Why that matters.** GitHub serves *other* project repos under a custom domain only when the
+domain is attached to the account's **user site** (`<user>.github.io`). Here the domain is on a
+project repo, so a second repo cannot get `thegeekdogs.com/office-politics/` on its own.
+
+**Options.**
+1. **Subdomain** (`play.thegeekdogs.com`): new repo `hellosahib/office-politics`, Pages via Actions,
+   custom domain = the subdomain, one Cloudflare `CNAME play → hellosahib.github.io`. Existing site
+   untouched, independent deploys, HTTPS from GitHub. **Chosen / recommended.**
+2. **Subpath by cross-repo publish**: the game's workflow pushes `dist/` into a folder of the
+   `thegeekdogs` repo. Works, but couples two sites' deploy pipelines and needs a deploy key with
+   write access to the other repo. Not set up.
+3. **Move the domain to a user site** (`hellosahib.github.io` with `thegeekdogs.com`): then every
+   project repo gets a path automatically. Restructures the existing site; rejected.
+4. **Firebase Hosting** for the game on a subdomain: also fine, but a second deploy system for no gain.
+
+**Build consequence.** `vite.config.ts` now uses `base: './'` (relative) and the workflow's
+`VITE_BASE` default is `./`, so one artifact works at `play.thegeekdogs.com/`,
+`hellosahib.github.io/office-politics/`, or any subpath. The app has no client-side router, so a
+relative base is safe. `VITE_BASE` can still force an absolute base if ever needed.
+
+**Note.** This machine's `gh` is logged in as the Keenai work account, not `hellosahib`; pushing
+to the studio account must be done by the user (or after `gh auth login` as that account).
