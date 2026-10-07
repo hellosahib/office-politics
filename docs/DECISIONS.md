@@ -317,7 +317,7 @@ If none exists the event is discarded with a log line.
 
 - Mole planted in round R is active while `round < R + 3` (§41 example: planted R3, active R4–R5, expires start of R6).
 - Promise created in round R expires at the start of round R + 3.
-- The first-player marker rotates by one seat each round (§54), skipping eliminated players.
+- ~~The first-player marker rotates by one seat each round (§54), skipping eliminated players.~~ Superseded by D38 (fixed seat order).
 - Election mode ends after the last player's turn of the final round.
 
 ---
@@ -355,7 +355,7 @@ grants the active player (e.g. CEO Town Hall "+1 Influence") and make a Private 
 Reveal event be paid from last turn's leftovers. Off-turn players (Global events) have no defined pool.
 
 **Chosen.** Refresh happens at the very start of the turn, before the event: `influence = rankMax +
-banked`. At end of turn unused Influence is set to 0 (§7 no carry-over). Influence gained/lost while it
+banked`. ~~At end of turn unused Influence is set to 0~~ (superseded by D39: left as-is, the next refresh SETS it). Influence gained/lost while it
 is *not* your turn (Global events) is "banked" and added to your next refresh; an off-turn Private Reveal
 must be paid from that bank, otherwise only Public is allowed. Management cost is still paid after the
 event (§9). Consequence: because every rank's max ≥ its management cost, Internal Instability only
@@ -396,7 +396,7 @@ Rebel Pressure mole (not the lead's own) is in it — including a department alr
 
 Reserve (saved) cards are playable on later turns like hand cards. `giveCard` may be used by any
 non-eliminated player whenever the engine is in a `play` phase (anyone's), not only by the active player.
-`legalTargets` before a focus is chosen uses the focus implied by the card mode (Both → own dept = Manage).
+~~`legalTargets` before a focus is chosen uses the focus implied by the card mode.~~ Superseded by D37/D42 (no focus; legality by card direction).
 
 ## D32. Score breakdown units and counting
 
@@ -476,3 +476,117 @@ don't fight over one save. `leave()` clears it. Online games need nothing: Fires
 source of truth and a reload just re-subscribes.
 
 **Where.** `src/net/localClient.ts` (`resumeLocalClient`, `persist`), `src/main.ts` (`offerResume`).
+
+---
+
+## D37. No per-turn Manage/Expand focus; event target prompts (owner override of §31–§32, 2026-10-07 playtest)
+
+**Issue.** Owner: "Where do you work today — remove this dialog, it doesn't make sense. User will do
+based on what cards they have." §31–§32 made the player pick Manage or Expand before playing.
+
+**Options.** (1) Keep focus but pre-select it. (2) Remove focus; each card's own data decides its targets.
+
+**Chosen: 2.** There is no focus step: the `play` pending always has `focus: null`, `state.focus` stays
+null, and `legalTargets` / `predict` / `playCard` never ask for one. The `focus` Action type is kept so
+action logs recorded before this change still parse; it is dispatched as an accepted no-op (returns
+ok, changes nothing but `actionCount`). Bots and the simulator no longer send it. *Replay note:* an old
+log replays without errors but may diverge from what was played (focus used to restrict targets, D38
+changes turn order, event prompts are ordered differently), which is acceptable for this pre-release
+build. Which targets are legal is D42 (card direction); it superseded this entry's first version
+(card `mode`: Internal → own, External → others, Both → anywhere).
+
+**Event target prompts (same playtest: "the promotion just moves to the next team member").**
+Global `individual`: each player's vote is immediately followed by that player's own `eventTarget`
+prompts (dept, then employee) before the next voter is asked. Global `majority`: all votes, then the
+winner, then each player's target prompts in seat order from the active player, then effects apply in
+the same order. Local: the choice is immediately followed by its target prompt. Employee candidates are
+the 4 employees of the resolved department, except an option containing `honorPromise` (Promotion
+Season "Honor Commitments", Promotion Promise Review "Honour a Promise"): only employees with an active
+promise; if there are none, no prompt is shown and the "nothing to honour" fallback is logged. A
+department is auto-picked only when the player leads exactly one (no real choice).
+*Root cause:* targets used to be requested while effects were being applied, i.e. only after *all*
+votes were in, so after voting the game visibly "moved on to the next player".
+
+**Where.** `src/engine/game.ts` → `handle('focus')`, `targetPrompt`, `stepEvent`; `rules.ts` → `checkPlay`.
+
+## D38. Turn order is plain round-robin (owner override of §54)
+
+**Issue.** Owner saw "player 2 played, then the bot, then player 2 again": §54's rotating first-player
+marker (R1: P0 P1 P2, R2: P1 P2 P0) let seat 1 play twice in a row across the round boundary.
+
+**Chosen.** Fixed seat order every round, 0 → 1 → 2 → (3) → 0, skipping eliminated seats. A round ends
+after the last non-eliminated seat; `firstPlayer` is the first non-eliminated seat (normally 0).
+The sims show no seat bias (300 3p Takeover games: 98 / 95 / 95 wins).
+
+**Where.** `game.ts` → `nextTurn`. Supersedes the marker bullet in D22.
+
+## D39. Influence is SET at refresh; leftovers stay visible (supersedes the zeroing sentence in D25)
+
+**Issue.** Owner: "Influence should be filled again when the turn starts, and a new set of cards given
+each round." D25 zeroed influence at end of turn, so dashboards showed 0/4 for every idle player.
+
+**Chosen.** At the start of every turn `influence = rankMax + influenceBank` (SET, not added) and the
+bank is cleared; management cost is still paid after the event. At end of turn influence is left as-is
+(a dashboard shows e.g. 1/4). Off-turn gains/losses (Global events) and off-turn Private Reveals use the
+new `Player.influenceBank` (D25's bank as an explicit field), never the visible leftover. Hands: from
+round 2 the draw phase deals 4 fresh cards (last turn's hand was discarded), so the hand is exactly 4
+unless an event granted bonus draws; the deck reshuffles the discard when empty.
+`GameView.turn.drawnThisTurn` lists the dealt ids (active player's view only; ids reveal card templates).
+
+**Where.** `game.ts` → `startTurn`, `afterEvent`, `nextTurn`, `handle('revealChoice')`; `rules.ts` → `addInfluence`.
+
+## D40. Narrative card log; score breakdown only in the view (owner override of the §89 log text)
+
+**Issue.** Owner: card plays must read as a story, with no calculation anywhere in the log.
+
+**Chosen.** Every resolved card logs one public line tagged `card`:
+"<Player> used <Card> on <Employee> of <Department>. <Reaction> Status changed from <Prev> to <New>."
+(or "Status unchanged (<State>)."). `<Reaction>` comes from a table in `rules.ts` keyed by direction ×
+success / failure / blocked (6–8 variants each), picked by a hash of employee id + round + permanent
+trait (deterministic, no rng draw), with the new optional `EmployeeDef.pronoun` ('they' if absent).
+The private "Base +1, … = 3" line is gone; the breakdown lives in `GameView.lastCardResult`
+(`explanation` only in the actor's view), kept until the next card resolves. Per D30 a Silent-Blocked
+play shows as `Failure` with a failure reaction to everyone except the actor, who sees `Blocked` and a
+"Somehow it had no effect." style reaction. Face-down mole plays don't set `lastCardResult`.
+Event and instability lines name the department and employee ("Missed Deadline in Finance — Sahib
+chose Blame Employee: Aditya Sen (Neutral → Skeptical)."). Tags in use: card, event, capture, rebel,
+mole, promotion, crisis, instability, turn, reveal (elimination → capture, game over → promotion,
+round start → turn).
+
+**Where.** `rules.ts` → `resolvePlay`, `reaction`, `REACTIONS`; `view.ts` → `cardResult`; `content/employees.ts`.
+
+## D41. Structured event outcome and reveal records for the UI
+
+**Issue.** Owner: "CEO Town Hall came — after every player selects, show the outcome and the effect on
+each player's team members in a centred modal."
+
+**Chosen.** When an event fully resolves (votes, targets, effects and any reveal/accusation prompts it
+raised) the engine stores `lastEventResult`: votes, outcome (majority winner; Local: the chosen option;
+individual Global / Reveal: null) and per player `{ deptId, minority, changes[] }`. Every applied effect
+is recorded (`loyalty`, `influence`, `protected`, `severity`, `reveal`, `investigate`, `promise`, `rebel`,
+`text`, including "Protected: no effect on <Dept>"); an empty list means nothing happened. It stays
+until the next event resolves. Reveal records carry `by` and `public`; `trait`/`weight` appear only for
+the revealer, or for everyone once disclosed publicly. A public reveal logs "X disclosed publicly: E
+(Dept) is T (w)."; a private one logs "You now know: …" to the revealer only, plus a neutral public
+"X kept a discovery private." `PlayerView.intel` is newest first with `deptId`.
+`ActiveEvent.affectedDeptIds` (Local: the dept; Global: each player's dept as it resolves),
+`DepartmentView.leadName` and `GameView.turn` serve the same UI.
+
+**Where.** `game.ts` → `finishEvent`, `stepEvent`; `rules.ts` → `applyEffects`, `revealChange`; `view.ts` → `maskResults`.
+
+## D42. Card legality by direction, not mode (owner rule; Neutral allowance is an assumption)
+
+**Issue.** Owner: targeting is decided by what the card does, not by its Internal/External label.
+
+**Chosen.** Positive cards: employees in departments you lead, **plus Neutral departments**. The
+Neutral allowance is the coordinator's *assumption*, added so Neutral departments stay capturable by
+3/4 alignment; set `POSITIVE_CARDS_ALLOW_NEUTRAL = false` in `rules.ts` to forbid it. Hostile cards:
+departments led by other players, plus Neutral departments. Moles: departments led by other players
+only (non-Loyal, as before). D4 (no positive card on an employee aligned to another player) still
+applies, including inside Neutral departments. `card.mode` stays in the data and card text but no
+longer affects legality; the UI labels cards "Your team" / "Other teams". Reasons: "Positive cards work
+on your own team", "Hostile cards target other teams".
+Consequence: a rival's department can no longer be won with positive cards, only through crisis or
+rebellion settlement; in the sims fewer games see a capture (3p Takeover: 137 of 300).
+
+**Where.** `rules.ts` → `checkPlay`, `POSITIVE_CARDS_ALLOW_NEUTRAL`.
