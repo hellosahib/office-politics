@@ -1,12 +1,13 @@
 // UI dev harness: the real game screen on a fake client wrapping a mock view.
 // Keys: 1 Local event · 2 Global vote (locked) · 3 Global revealed + eventTarget · 4 revealChoice
 //       5 play (choose focus) · 6 play (Expand) · 7 save · 8 summary · 9 accusation (mine)
-//       0 game over (Election) · w someone else's turn · c hot-seat curtain
+//       0 game over (Election) · w someone else's turn · c hot-seat curtain · e employee dossier
 import type { GameClient } from '../client';
 import type { Action, EmployeeId, GameView, Pending, PlayerId, Prediction } from '../engine/types';
 import { AGENDAS, buildEventDeck, buildInfluenceDeck } from '../content';
 import { makeMockView } from './mockView';
 import { mountGame } from '../ui/game';
+import { ui } from '../ui/helpers';
 
 let view: GameView;
 let me: PlayerId | null = 0;
@@ -129,5 +130,6 @@ scenario('6');
 mountGame(document.getElementById('app')!, client, () => console.log('exit'));
 window.addEventListener('keydown', e => {
   if (e.target instanceof HTMLInputElement) return;
+  if (e.key === 'e') { ui.inspect = ui.inspect ? null : 'tanya-jain'; emit(); return; }
   if ('1234567890wc'.includes(e.key)) scenario(e.key);
 });
