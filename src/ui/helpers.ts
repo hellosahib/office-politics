@@ -74,7 +74,7 @@ export function band(score: number): string {
 }
 export function bandRange(min: number, max: number): string {
   const a = band(min), b = band(max);
-  return a === b ? a : `${a} – ${b}`;
+  return a === b ? a : `${a} to ${b}`;
 }
 
 const SECONDARY_TEXT: Record<SecondaryEffect, string> = {
@@ -93,11 +93,23 @@ const BACKFIRE_TEXT: Record<Backfire, string> = {
   loseInfluence: 'lose 1 extra Influence',
   exposeSelf: 'your attempt is exposed publicly',
 };
-const DIRECTION = { positive: ['↑', 'positive'], negative: ['↓', 'hostile'], mole: ['◎', 'mole'] } as const;
+const DIRECTION = { positive: ['↑', 'positive'], negative: ['↓', 'hostile'], mole: ['◉', 'mole'] } as const;
+
+/** Category glyphs for the card art (24×24 line icons, inline: no icon dependency). */
+const CAT_GLYPH: Record<InfluenceCard['category'], string> = {
+  Social: '<path d="M4 6h10a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H9l-4 3v-3H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"/><path d="M18 9h2a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-1v3l-4-3h-3"/>',
+  Recognition: '<circle cx="12" cy="9" r="6"/><path d="M12 6l1 2 2 .3-1.5 1.4.4 2.1L12 10.8 10.1 11.8l.4-2.1L9 8.3 11 8z"/><path d="M8.5 14L7 22l5-3 5 3-1.5-8"/>',
+  Support: '<path d="M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.6-7 10-7 10z"/>',
+  Authority: '<path d="M3 21h18M5 21V10M9.5 21V10M14.5 21V10M19 21V10M2 10l10-6 10 6z"/>',
+  Pressure: '<path d="M4 4h16M4 20h16M8 4v4l4 4 4-4V4M8 20v-4l4-4 4 4v4"/>',
+  Mole: '<path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/>',
+};
+export const glyph = (paths: string, cls = 'glyph') =>
+  `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 
 /**
  * One influence card. `act` makes it a clickable button (data-act/data-id);
- * `disabled` dims it and prints the reason; `extra` is appended inside (e.g. a Give button row).
+ * `disabled` dims it and prints the reason; `extra` is appended after the card (e.g. a Give row).
  */
 export function cardHtml(c: InfluenceCard, o: { act?: string; selected?: boolean; disabled?: string | null; extra?: string } = {}): string {
   const [icon, dirName] = DIRECTION[c.direction];
@@ -105,29 +117,89 @@ export function cardHtml(c: InfluenceCard, o: { act?: string; selected?: boolean
     c.primary && `<span class="aff plus">+${TRAIT_LABEL[c.primary]}</span>`,
     c.secondary && `<span class="aff plus">+${TRAIT_LABEL[c.secondary]}</span>`,
     c.adverse && `<span class="aff minus">−${TRAIT_LABEL[c.adverse]}</span>`,
-  ].filter(Boolean).join(' ');
+  ].filter(Boolean).join('');
   const strong = c.direction === 'mole'
     ? (c.moleAbility === 'SilentBlock' ? 'Secretly blocks one positive attempt' : 'Adds +1 rebel pressure in a crisis')
     : SECONDARY_TEXT[c.secondaryEffect];
   const body = `
-    <div class="card-top"><span class="card-name">${esc(c.name)}</span><span class="cost" title="Cost">${c.cost}</span></div>
-    <div class="card-meta"><span class="dir dir-${c.direction}" title="${dirName}">${icon} ${dirName}</span> · ${esc(c.mode)}${c.direction !== 'mole' ? ` · base ${c.baseEffect}` : ''}</div>
-    ${aff ? `<div class="card-aff">${aff}</div>` : ''}
-    ${strong ? `<div class="card-fx"><b>Strong:</b> ${esc(strong)}</div>` : ''}
-    ${BACKFIRE_TEXT[c.backfire] ? `<div class="card-fx bad"><b>Backfire:</b> ${esc(BACKFIRE_TEXT[c.backfire])}</div>` : ''}
-    <div class="card-text">${esc(c.text)}</div>
-    ${o.disabled ? `<div class="card-reason">${esc(o.disabled)}</div>` : ''}`;
-  const cls = `card dir-${c.direction}${o.selected ? ' selected' : ''}${o.disabled ? ' dim' : ''}`;
-  if (!o.act) return `<div class="${cls}">${body}${o.extra ?? ''}</div>`;
-  return `<div class="card-wrap"><button type="button" class="${cls}" data-act="${o.act}" data-id="${esc(c.id)}"${o.disabled ? ' aria-disabled="true"' : ''}>${body}</button>${o.extra ?? ''}</div>`;
+    <span class="card-art">${glyph(CAT_GLYPH[c.category], 'card-glyph')}<span class="card-cat">${esc(c.category)}</span></span>
+    <span class="card-cost" title="Cost: ${c.cost} Influence">${c.cost}</span>
+    <span class="card-dir" title="${dirName}">${icon}</span>
+    <span class="card-name">${esc(c.name)}</span>
+    <span class="card-meta">${dirName} · ${esc(c.mode)}${c.direction !== 'mole' ? ` · base ${c.baseEffect}` : ''}</span>
+    ${aff ? `<span class="card-aff">${aff}</span>` : ''}
+    ${strong ? `<span class="card-fx"><b>Strong</b> ${esc(strong)}</span>` : ''}
+    ${BACKFIRE_TEXT[c.backfire] ? `<span class="card-fx bad"><b>Backfire</b> ${esc(BACKFIRE_TEXT[c.backfire])}</span>` : ''}
+    <span class="card-text">${esc(c.text)}</span>
+    ${o.disabled ? `<span class="card-reason">${esc(o.disabled)}</span>` : ''}`;
+  const cls = `card cat-${c.category} dir-${c.direction}${o.selected ? ' selected' : ''}${o.disabled ? ' dim' : ''}`;
+  const enter = `data-enter="card:${esc(c.id)}" data-anim="draw"`;
+  if (!o.act) return `<div class="card-wrap" ${enter}><div class="${cls}">${body}</div>${o.extra ?? ''}</div>`;
+  return `<div class="card-wrap" ${enter}><button type="button" class="${cls}" data-act="${o.act}" data-id="${esc(c.id)}"${o.disabled ? ' aria-disabled="true"' : ''}>${body}</button>${o.extra ?? ''}</div>`;
 }
 
 /** Replace innerHTML only when it changed, so scroll positions and focus survive re-renders. */
 const lastHtml = new WeakMap<Element, string>();
-export function setHtml(el: Element, html: string): void {
-  if (lastHtml.get(el) === html) return;
+export function setHtml(el: Element, html: string): boolean {
+  if (lastHtml.get(el) === html) return false;
   lastHtml.set(el, html);
   el.innerHTML = html;
+  return true;
+}
+
+// ---------------------------------------------------------------- motion
+export const motionOK = () => !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+/**
+ * Entrance animations. Templates mark elements with data-enter="<unique key>" data-anim="<kind>";
+ * after each render, an element whose key was never seen gets class `anim-<kind>` once (CSS keyframes
+ * do the rest). Re-renders that rebuild the same element don't replay it.
+ * Returns the keys that entered this pass so callers can hook extra effects (confetti).
+ */
+const entered = new Set<string>();
+export function runEnter(root: Element): string[] {
+  const fresh: string[] = [];
+  let drawIdx = 0;
+  root.querySelectorAll<HTMLElement>('[data-enter]').forEach(el => {
+    const key = el.dataset.enter!;
+    if (entered.has(key)) return;
+    entered.add(key);
+    fresh.push(key);
+    if (!motionOK()) return;
+    const kind = el.dataset.anim ?? 'fade';
+    if (kind === 'draw') el.style.animationDelay = `${drawIdx++ * 80}ms`;
+    el.classList.add(`anim-${kind}`);
+    el.addEventListener('animationend', () => { el.classList.remove(`anim-${kind}`); el.style.animationDelay = ''; }, { once: true });
+  });
+  return fresh;
+}
+/** Mark everything under root as already seen (e.g. the log backlog on first mount). */
+export function markEntered(root: Element): void {
+  root.querySelectorAll<HTMLElement>('[data-enter]').forEach(el => entered.add(el.dataset.enter!));
+}
+
+/** Meter element; when its value for `key` changes between renders, tweenMeters() animates the fill. */
+export function meterHtml(key: string, v: number, max: number, cls = ''): string {
+  const m = Math.max(1, max);
+  return `<span class="meter ${cls}" data-tween="${esc(key)}" data-v="${v}" data-max="${m}" role="meter" aria-valuenow="${v}" aria-valuemin="0" aria-valuemax="${m}">`
+    + `<i class="meter-fill" style="transform:scaleX(${Math.min(1, v / m)})"></i>`
+    + Array.from({ length: m - 1 }, (_, i) => `<i class="meter-tick" style="left:${((i + 1) / m) * 100}%"></i>`).join('')
+    + '</span>';
+}
+const meterLast = new Map<string, number>();
+export function tweenMeters(root: Element): void {
+  root.querySelectorAll<HTMLElement>('[data-tween]').forEach(el => {
+    const key = el.dataset.tween!, v = Number(el.dataset.v), max = Number(el.dataset.max);
+    const old = meterLast.get(key);
+    meterLast.set(key, v);
+    if (old === undefined || old === v || !motionOK()) return;
+    el.querySelector('.meter-fill')?.animate(
+      [{ transform: `scaleX(${Math.min(1, old / max)})` }, { transform: `scaleX(${Math.min(1, v / max)})` }],
+      { duration: 750, easing: 'cubic-bezier(.16,1,.3,1)' });
+    el.parentElement?.querySelector('.num')?.animate(
+      [{ transform: 'scale(1.4)', color: v > old ? 'var(--good)' : 'var(--bad)' }, { transform: 'scale(1)' }],
+      { duration: 650, easing: 'cubic-bezier(.34,1.56,.64,1)' });
+  });
 }
 
 /** Colour every player name in a plain log line. Skips "Sahib Singh"-style employee names (D24). */

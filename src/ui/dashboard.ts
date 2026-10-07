@@ -1,31 +1,38 @@
-// Top bar + §65 player dashboard (own private stats, intel with expose) + public player list.
+// Top bar HUD + §65 player dashboard (own private stats, intel with expose) + public player list.
 import type { GameView, Pending, TraitPole } from '../engine/types';
 import { MAX_RESERVE, RANK_LABEL, TRAIT_LABEL } from '../engine/types';
 import type { GameClient } from '../client';
-import { deptName, empName, esc, isMine, pendingPlayer, pname, ui, weightLabel, type Handlers } from './helpers';
+import { deptName, empName, esc, glyph, isMine, meterHtml, pendingPlayer, pname, ui, weightLabel, type Handlers } from './helpers';
 
 const PHASE_LABEL: Record<Pending['kind'], string> = {
   eventChoice: 'Event', eventTarget: 'Event', revealChoice: 'Reveal', play: 'Play cards',
   save: 'Save cards', summary: 'End of turn', accusation: 'Accusation', gameOver: 'Game over',
 };
+const I = {
+  menu: '<path d="M4 7h16M4 12h16M4 17h10"/>',
+  log: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h7M9 16h7M9 8h3"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.5v.4M12 17h.01"/>',
+  exit: '<path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10"/>',
+};
 
 export function topbarHtml(view: GameView, client: GameClient): string {
   const me = client.me === null ? null : view.players[client.me];
   const waitingOn = pendingPlayer(view.pending);
-  const round = view.maxRounds ? `Round ${view.round} / ${view.maxRounds}` : `Round ${view.round}`;
   const waiting = waitingOn !== null && !isMine(view, client) && view.phase !== 'gameOver'
-    ? `<span class="chip waiting">Waiting for ${pname(view, waitingOn)}…</span>` : '';
-  return `<button type="button" class="tb-toggle" data-act="toggle-dash" aria-pressed="${ui.showDash}">☰</button>
-    <span class="tb-item"><b>${round}</b></span>
-    <span class="tb-item">Turn: ${pname(view, view.currentPlayer)}</span>
-    <span class="tb-item muted">${PHASE_LABEL[view.pending.kind]}</span>
-    <span class="tb-item muted hide-sm">${esc(view.config.mode)}${view.config.board === 'mini' ? ' · mini' : ''}</span>
+    ? `<span class="tb-wait">Waiting for ${pname(view, waitingOn)}<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></span>` : '';
+  const yourMove = isMine(view, client) && view.phase !== 'gameOver';
+  return `<button type="button" class="icon-btn tb-toggle" data-act="toggle-dash" aria-pressed="${ui.showDash}" aria-label="Dashboard">${glyph(I.menu)}</button>
+    <span class="tb-brand hide-sm" aria-hidden="true">OP</span>
+    <span class="tb-round"><span class="k">Round</span> <b class="num">${view.round}</b>${view.maxRounds ? `<span class="k">/${view.maxRounds}</span>` : ''}</span>
+    <span class="tb-turn" style="--pc:${esc(view.players[view.currentPlayer]?.color ?? '#888')}">${pname(view, view.currentPlayer)}</span>
+    <span class="tb-phase${yourMove ? ' live' : ''}">${PHASE_LABEL[view.pending.kind]}</span>
+    <span class="tb-mode hide-sm">${esc(view.config.mode)}${view.config.board === 'mini' ? ' · mini' : ''}</span>
     ${waiting}
     <span class="spacer"></span>
-    ${me && ui.canAct ? `<span class="tb-item hide-sm">You: ${pname(view, me.id)}</span>` : ''}
-    <button type="button" class="tb-help" data-act="help" title="How to play" aria-label="How to play">?</button>
-    <button type="button" class="tb-toggle" data-act="toggle-log" aria-pressed="${ui.showLog}">Log</button>
-    <button type="button" class="link" data-act="leave">Leave</button>`;
+    ${me && ui.canAct ? `<span class="tb-you hide-sm">You are ${pname(view, me.id)}</span>` : ''}
+    <button type="button" class="icon-btn tb-help" data-act="help" title="How to play" aria-label="How to play">${glyph(I.help)}</button>
+    <button type="button" class="icon-btn tb-toggle" data-act="toggle-log" aria-pressed="${ui.showLog}" aria-label="Political log">${glyph(I.log)}</button>
+    <button type="button" class="icon-btn" data-act="leave" title="Leave game" aria-label="Leave game">${glyph(I.exit)}</button>`;
 }
 
 export function dashboardHtml(view: GameView, client: GameClient): string {
@@ -34,35 +41,38 @@ export function dashboardHtml(view: GameView, client: GameClient): string {
   if (me && ui.canAct) {
     const myTurn = isMine(view, client);
     const status = view.phase === 'gameOver' ? 'Game over'
-      : myTurn ? `Your turn — ${PHASE_LABEL[view.pending.kind]}` : `Waiting for ${pname(view, pendingPlayer(view.pending))}`;
+      : myTurn ? `Your move: ${PHASE_LABEL[view.pending.kind]}` : `Waiting for ${pname(view, pendingPlayer(view.pending))}`;
     const canExpose = myTurn && view.pending.kind === 'play';
     const intel = (me.intel ?? []).map(i => {
       const e = view.employees.find(x => x.id === i.employeeId);
       const already = (e?.hiddenTrait1 === i.trait && e.hiddenTrait1Public) || (e?.hiddenTrait2 === i.trait && e.hiddenTrait2Public);
-      return `<li>${empName(view, i.employeeId)}: ${TRAIT_LABEL[i.trait]} <span class="muted">${weightLabel(i.weight)}</span>
+      return `<li><span class="intel-who">${empName(view, i.employeeId)}</span>
+        <span class="stamp sm">${TRAIT_LABEL[i.trait]} ${weightLabel(i.weight)}</span>
         ${canExpose && !already ? `<button type="button" class="link" data-act="expose" data-id="${esc(i.employeeId)}" data-trait="${i.trait}">Expose publicly</button>` : ''}
         ${already ? '<span class="muted small">public</span>' : ''}</li>`;
     }).join('');
-    mine = `<div class="me-card" style="--pc:${esc(me.color)}">
-      <div class="me-name">${pname(view, me.id)} <span class="muted">${RANK_LABEL[me.rank]}</span></div>
-      <div class="turn-status">${status}</div>
-      <table class="kv">
-        <tr><th>Influence</th><td><b>${me.influence}</b> / ${me.influenceMax}</td></tr>
-        <tr><th>Departments</th><td>${me.controlledDepartments.map(d => deptName(view, d)).join(', ') || '—'}</td></tr>
-        <tr><th>Management cost</th><td>${me.managementCost}</td></tr>
-        <tr><th>Saved cards</th><td>${me.reserveCount} / ${MAX_RESERVE}</td></tr>
-        <tr><th>Loyalists</th><td>${me.loyalists}</td></tr>
-        <tr><th>Favorable</th><td>${me.favorable}</td></tr>
-        <tr><th>Rebels</th><td>${me.rebels}</td></tr>
-        <tr><th>Active moles</th><td>${me.activeMoles ?? 0}</td></tr>
-      </table>
-      ${me.agenda ? `<div class="agenda"><div class="sec-title">Secret agenda</div><b>${esc(me.agenda.name)}</b><div class="small">${esc(me.agenda.objective)}</div></div>` : ''}
+    const tile = (label: string, value: string | number, cls = '') => `<div class="stat ${cls}"><span class="num">${value}</span><span class="label">${label}</span></div>`;
+    mine = `<section class="me-card" style="--pc:${esc(me.color)}">
+      <header class="me-head">
+        <span class="me-avatar" aria-hidden="true">${esc(me.name.slice(0, 1).toUpperCase())}</span>
+        <div><div class="me-name">${esc(me.name)}</div><div class="rank">${RANK_LABEL[me.rank]}</div></div>
+      </header>
+      <div class="turn-status${myTurn ? ' live' : ''}">${status}</div>
+      <div class="stat-infl"><span class="label">Influence</span><span class="num">${me.influence}</span><span class="of">/ ${me.influenceMax}</span>
+        ${meterHtml(`infl:${me.id}`, me.influence, me.influenceMax)}</div>
+      <div class="stat-grid">
+        ${tile('Depts', me.controlledDepartments.length)}${tile('Upkeep', me.managementCost)}${tile('Saved', `${me.reserveCount}/${MAX_RESERVE}`)}
+        ${tile('Loyal', me.loyalists, 'gold')}${tile('Favorable', me.favorable, 'good')}${tile('Rebels', me.rebels, me.rebels ? 'bad' : '')}
+        ${tile('Moles', me.activeMoles ?? 0, me.activeMoles ? 'mole' : '')}
+      </div>
+      <div class="depts-line"><span class="label">Departments</span> ${me.controlledDepartments.map(d => deptName(view, d)).join(', ') || '<span class="muted">none</span>'}</div>
+      ${me.agenda ? `<div class="agenda"><div class="agenda-seal">Secret agenda</div><b>${esc(me.agenda.name)}</b><div class="small">${esc(me.agenda.objective)}</div></div>` : ''}
       ${intel ? `<div class="sec-title">Private intel</div><ul class="intel">${intel}</ul>` : ''}
-    </div>`;
+    </section>`;
   }
-  const players = view.players.map(p => `<li class="pl${p.eliminated ? ' out' : ''}${p.id === view.currentPlayer ? ' current' : ''}">
-      ${pname(view, p.id)}${p.isBot ? ' <span class="tag">bot</span>' : ''}${p.eliminated ? ' <span class="tag">out</span>' : ''}
-      <div class="small muted">${RANK_LABEL[p.rank]} · ${p.controlledDepartments.length} dept · ${p.influence}/${p.influenceMax} inf · hand ${p.handCount} · saved ${p.reserveCount}</div>
+  const players = view.players.map(p => `<li class="pl${p.eliminated ? ' out' : ''}${p.id === view.currentPlayer ? ' current' : ''}" style="--pc:${esc(p.color)}">
+      <div class="pl-top">${pname(view, p.id)}${p.isBot ? ' <span class="tag">bot</span>' : ''}${p.eliminated ? ' <span class="tag">out</span>' : ''}<span class="pl-rank">${RANK_LABEL[p.rank]}</span></div>
+      <div class="pl-stats"><span title="Departments"><b>${p.controlledDepartments.length}</b> dept</span><span title="Influence"><b>${p.influence}</b>/${p.influenceMax} inf</span><span title="Cards in hand"><b>${p.handCount}</b> hand</span><span title="Saved cards"><b>${p.reserveCount}</b> saved</span></div>
     </li>`).join('');
   return `${mine}<div class="sec-title">Players</div><ul class="players">${players}</ul>`;
 }

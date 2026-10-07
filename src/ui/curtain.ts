@@ -19,8 +19,10 @@ export function curtainHtml(view: GameView, client: GameClient): string {
   if (ui.canAct) return '';
   return `<div class="curtain" style="--pc:${esc(seat.color)}" role="dialog" aria-label="Pass the device">
     <div class="curtain-box">
-      <div class="curtain-dot"></div>
+      <div class="curtain-badge" aria-hidden="true"><span class="clip"></span>${esc(seat.name.slice(0, 1).toUpperCase())}</div>
+      <div class="sheet-kicker">Eyes only</div>
       <h1>Pass the device to <span class="pname" style="--pc:${esc(seat.color)}">${esc(seat.name)}</span></h1>
+      <p class="muted">Everyone else, look away. Private cards and intel are on the next screen.</p>
       <button type="button" class="primary big-btn" data-act="curtain-ok">I'm ${esc(seat.name)}</button>
     </div>
   </div>`;

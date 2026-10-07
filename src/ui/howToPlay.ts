@@ -54,7 +54,7 @@ const SECTIONS: [id: string, title: string, html: string][] = [
     <table class="ht-t"><tr><th>Departments</th><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td></tr>
       <tr><th>Cost per turn</th><td>0</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td></tr></table>
     <p>You get <b>4 cards</b> a turn. Each turn choose a focus: <b>Manage</b> (employees in your own departments) or <b>Expand</b> (everyone else). A card's mode says where it works: Internal, External or Both.</p>
-    <p><b>Reading a card:</b> cost (blue circle) · direction (↑ positive, ↓ hostile, ◎ mole) · mode · base effect · green trait affinities help, red ones hurt · <b>Strong</b> bonus · <b>Backfire</b> on failure.</p>
+    <p><b>Reading a card:</b> cost (brass coin, top left) · direction (↑ positive, ↓ hostile, ◉ mole) · category art · mode · base effect · green trait affinities help, red ones hurt · <b>Strong</b> bonus · <b>Backfire</b> on failure.</p>
     <p class="ht-formula">Score = base + rank bonus + trait matches + event modifiers + random (−1 / 0 / +1)</p>
     <p>Matching a trait adds its weight (+1 known, +2 or 0 hidden); an adverse match subtracts it. The random roll is 0 most of the time (60%).</p>
     <table class="ht-t"><tr><th>Score</th><th>Result</th></tr>
@@ -124,16 +124,16 @@ const SECTIONS: [id: string, title: string, html: string][] = [
       <li>Elimination is permanent. Never let your last department reach 3 Rebels.</li></ul>`],
 
   ['screen', 'Reading the screen', `
-    <ul><li><b>Top bar</b> — round, whose turn, current phase; ☰ and Log open panels on phones.</li>
-      <li><b>Dashboard</b> (left) — your rank, Influence, upkeep, saved cards, agenda and private intel; all players below.</li>
-      <li><b>Hand</b> (bottom) — pick a card, then a highlighted employee; a prediction shows before you commit.</li>
-      <li><b>Log</b> (right) — public history; purple lines are private to you. Click a department to filter it.</li>
-      <li><b>Employee panel</b> — click any employee for traits (??? = unknown), loyalty, side and recent actions.</li></ul>
+    <ul><li><b>Top bar</b>: round, whose turn, current phase. On phones the menu and log icons open the side panels.</li>
+      <li><b>Dashboard</b> (left): your rank, Influence meter, upkeep, saved cards, agenda and private intel; all players below.</li>
+      <li><b>Hand</b> (bottom): pick a card, then a highlighted employee; a forecast bar shows the possible outcomes before you commit.</li>
+      <li><b>Log</b> (right): public history; purple lines are private to you. Click a department to filter it.</li>
+      <li><b>Personnel file</b>: click any employee for their portrait, traits (striped bars = unknown), loyalty ladder, side and recent actions.</li></ul>
     <h4>On the board</h4>
-    <ul><li>Ring colour = loyalty: ${L} gold, ${F} green, ${N} grey, ${S} orange, ${R} red.</li>
-      <li>Token colour = the player they side with.</li>
-      <li><span class="ht-sym" style="color:#ff3b30">▲</span> red flag = Rebel · <span class="ht-sym" style="color:#b45cff">●</span> purple dot = a mole you know about · <span class="ht-sym" style="color:#fff1a8">★</span> star = active promise.</li>
-      <li>Tile rim = the department's lead (brighter = yours). <span class="ht-sym" style="color:#ffb020">Amber pulsing</span> = Unstable; red pulsing = crisis.</li></ul>`],
+    <ul><li>Each employee is a portrait card on a small plinth. The ring around the plinth is loyalty: ${L} gold, ${F} green, ${N} grey, ${S} orange, ${R} red.</li>
+      <li>The card's edge and plinth take the colour of the player they side with. ${L} employees wear a gold halo; ${R}s turn away from you.</li>
+      <li><span class="ht-sym" style="color:#e5484d">!</span> red badge = Rebel · <span class="ht-sym" style="color:#a487ff">purple shimmer</span> = a mole you know about · <span class="ht-sym" style="color:#ffd36b">★</span> star = active promise.</li>
+      <li>A tile's glowing rim and floor light = the department's lead (brighter = yours). <span class="ht-sym" style="color:#ffb020">Amber flicker</span> = Unstable; red pulse = crisis. Rebels crack the floor.</li></ul>`],
 
   ['online', 'Online play', `
     <p>Create a room and share its <b>6-letter code</b>; friends join with it. The host picks the settings and presses Start. <b>Empty seats become bots</b>. Your screen only ever shows what your seat is allowed to know. In <b>Local</b> mode, a curtain hides private info while the device is passed around.</p>`],

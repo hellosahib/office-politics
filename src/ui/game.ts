@@ -3,7 +3,7 @@
 import type { Action, GameView } from '../engine/types';
 import type { GameClient } from '../client';
 import { createBoard, type BoardOptions } from '../board/board';
-import { esc, isMine, setHtml, ui, type Ctx, type Handlers } from './helpers';
+import { esc, isMine, markEntered, motionOK, runEnter, setHtml, tweenMeters, ui, type Ctx, type Handlers } from './helpers';
 import { canPlay, focusChooserHtml, handActions, handHtml } from './hand';
 import { saveHtml, summaryActions, summaryHtml } from './summary';
 import { eventActions, eventHtml } from './eventModal';
@@ -12,7 +12,7 @@ import { dashboardActions, dashboardHtml, topbarHtml } from './dashboard';
 import { logActions, logHtml } from './log';
 import { accusationActions, accusationHtml } from './accusation';
 import { curtainActions, curtainHtml } from './curtain';
-import { endGameActions, endGameHtml } from './endGame';
+import { confetti, endGameActions, endGameHtml } from './endGame';
 import { openHelp } from './howToPlay';
 
 const handlers: Handlers = {
@@ -44,6 +44,7 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
   let lastEvent = '';
   let disposed = false;
   let toastTimer = 0;
+  let firstPaint = true;
 
   const ctx: Ctx = {
     get view() { return client.getView(); },
@@ -100,6 +101,11 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
     setHtml(slot('toast'), ui.error
       ? `<div class="toast" role="alert">${esc(ui.error)} <button type="button" class="link" data-act="toast-close" aria-label="Dismiss">✕</button></div>` : '');
     if (ui.error) { clearTimeout(toastTimer); toastTimer = window.setTimeout(() => { ui.error = null; render(); }, 4000); }
+    // Entrance animations run once per new element key; the log backlog on mount stays still.
+    if (firstPaint) { markEntered(slot('log')); firstPaint = false; }
+    const fresh = runEnter(el);
+    if (fresh.some(k => k.startsWith('endgame'))) confetti(el, view.players.map(p => p.color));
+    tweenMeters(el);
     el.classList.toggle('show-dash', ui.showDash);
     el.classList.toggle('show-log', ui.showLog);
     el.classList.toggle('has-hand', slot('hand').innerHTML !== '');
@@ -143,6 +149,20 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
     render();
   };
   const onResize = () => board.resize();
+  // Hover tilt on hand cards (fine pointers only); the CSS reads --rx/--ry.
+  const fine = window.matchMedia?.('(hover: hover) and (pointer: fine)').matches;
+  const onTilt = (e: PointerEvent) => {
+    const card = (e.target as HTMLElement).closest<HTMLElement>('.hand .card');
+    if (!card || !motionOK()) return;
+    const r = card.getBoundingClientRect();
+    card.style.setProperty('--rx', `${(0.5 - (e.clientY - r.top) / r.height) * 10}deg`);
+    card.style.setProperty('--ry', `${((e.clientX - r.left) / r.width - 0.5) * 12}deg`);
+  };
+  const onTiltOut = (e: PointerEvent) => {
+    const card = (e.target as HTMLElement).closest<HTMLElement>('.hand .card');
+    card?.style.removeProperty('--rx'); card?.style.removeProperty('--ry');
+  };
+  if (fine) { slot('hand').addEventListener('pointermove', onTilt); slot('hand').addEventListener('pointerout', onTiltOut); }
   el.addEventListener('click', onClick);
   window.addEventListener('keydown', onKey);
   window.addEventListener('resize', onResize);
