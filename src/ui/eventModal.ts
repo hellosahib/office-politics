@@ -4,7 +4,7 @@ import type { DeptId, GameView } from '../engine/types';
 import { TRAIT_LABEL } from '../engine/types';
 import type { GameClient } from '../client';
 import { portraitDataUrl } from '../board/portrait';
-import { deptName, empBadges, esc, isMine, leadName, loyChip, pendingPlayer, pname, ui, weightLabel, type Handlers } from './helpers';
+import { deptName, empBadges, esc, isMine, leadName, loyChip, pendingPlayer, pname, traitChips, ui, weightLabel, type Handlers } from './helpers';
 import { eventTargetTitle } from './picker';
 
 /** Departments the event touches; Global (or unknown) → the viewer's own departments. */
@@ -28,7 +28,7 @@ function teamStripHtml(view: GameView, client: GameClient): string {
     const emps = d.employeeIds.map(eid => view.employees.find(e => e.id === eid)!).filter(Boolean).map(e => {
       const pc = e.politicalOwner !== null ? view.players[e.politicalOwner]?.color : null;
       return `<button type="button" class="ts-emp${ui.inspect === e.id ? ' on' : ''}" data-act="inspect" data-id="${esc(e.id)}" style="--pc:${esc(pc ?? 'var(--line-2)')}" title="Open ${esc(e.name)}'s file">
-        <img src="${portraitDataUrl(e)}" alt="" width="34" height="42"><span class="ts-name">${esc(e.name.split(' ')[0])}${empBadges(e, ui.canAct)}</span>${loyChip(e.loyalty)}</button>`;
+        <img src="${portraitDataUrl(e)}" alt="" width="34" height="42"><span class="ts-name">${esc(e.name.split(' ')[0])}${empBadges(e, ui.canAct)}</span>${traitChips(e, ui.canAct, null, true)}${loyChip(e.loyalty)}</button>`;
     }).join('');
     return `<div class="ts-dept"><div class="ts-head"><b>${esc(d.name)}</b><span class="muted small">Lead ${leadName(view, id)}</span></div><div class="ts-row">${emps}</div></div>`;
   }).join('');

@@ -1,8 +1,32 @@
 // §68 end game: CEO announcement, Takeover stats or Election scoring table, agendas revealed,
 // political highlights rolling like credits.
-import type { GameView } from '../engine/types';
-import { RANK_LABEL } from '../engine/types';
-import { esc, colourNames, motionOK, pname, type Handlers } from './helpers';
+import type { EmployeeView, GameView, TraitPole } from '../engine/types';
+import { RANK_LABEL, TRAIT_LABEL } from '../engine/types';
+import { portraitDataUrl } from '../board/portrait';
+import { esc, colourNames, loyChip, motionOK, pname, weightLabel, type Handlers } from './helpers';
+
+/** At game over the view fills in every hidden trait; hiddenTraitXPublic still says whether it was disclosed in play. */
+function finalTraits(e: EmployeeView): string {
+  const chip = (t: TraitPole | null, w: number, pub: boolean | null) =>
+    `<span class="tchip sm${t ? '' : ' unknown'}">${t ? esc(TRAIT_LABEL[t]) : '???'} <span class="w">${weightLabel(w)}</span>${
+      pub === null ? '' : `<span class="tmark${pub ? '' : ' was-hidden'}">${pub ? 'public' : 'was hidden'}</span>`}</span>`;
+  return `<span class="tchips">${chip(e.permanentTrait, 1, null)}${chip(e.hiddenTrait1, 2, e.hiddenTrait1Public)}${chip(e.hiddenTrait2, 0, e.hiddenTrait2Public)}</span>`;
+}
+
+/** "Everyone's cards on the table": every department, its 4 employees, final loyalty, owner, all traits. */
+function revealAllHtml(view: GameView): string {
+  return `<div class="reveal-all">${view.departments.map(d => {
+    const lead = d.teamLead === null ? null : view.players[d.teamLead];
+    const emps = d.employeeIds.map(id => view.employees.find(e => e.id === id)).filter((e): e is EmployeeView => !!e).map(e => {
+      const owner = e.politicalOwner === null ? null : view.players[e.politicalOwner];
+      return `<li class="ra-emp" style="--pc:${esc(owner?.color ?? 'var(--line-2)')}">
+        <img src="${portraitDataUrl(e)}" alt="" width="34" height="42" loading="lazy">
+        <div class="ra-main"><div class="ra-name"><b>${esc(e.name)}</b>${loyChip(e.loyalty)}</div>
+          <div class="ra-owner small muted">${owner ? pname(view, owner.id) : 'Unattached'}</div>${finalTraits(e)}</div></li>`;
+    }).join('');
+    return `<section class="ra-dept" style="--pc:${esc(lead?.color ?? 'var(--line-2)')}"><div class="ra-head"><b>${esc(d.name)}</b><span class="small muted">${lead ? `Lead ${pname(view, lead.id)}` : 'Neutral floor'}</span></div><ul>${emps}</ul></section>`;
+  }).join('')}</div>`;
+}
 
 export function endGameHtml(view: GameView): string {
   if (view.phase !== 'gameOver') return '';
@@ -39,6 +63,8 @@ export function endGameHtml(view: GameView): string {
     <div class="ceo-spot" aria-hidden="true"></div>
     ${hero}
     <div class="table-scroll">${table}</div>
+    <div class="sec-title">Everyone's cards on the table</div>
+    ${revealAllHtml(view)}
     ${agendas ? `<div class="sec-title">Secret agendas, declassified</div><ul class="agendas">${agendas}</ul>` : ''}
     ${highlights.length ? `<div class="sec-title">Political highlights</div><ul class="credits">${highlights.map((l, i) => `<li style="--i:${i}"><span class="log-r">R${l.round}</span><span>${colourNames(view, l.text)}</span></li>`).join('')}</ul>` : ''}
     <div class="row sheet-foot"><button type="button" class="primary" data-act="back-to-lobby">Back to lobby</button></div>

@@ -87,14 +87,18 @@ function showBanner(root: HTMLElement, view: GameView, r: CardResult): void {
 }
 
 // ---------------------------------------------------------------- trait reveal banners
-/** Newest reveal line: public ("Revealed: X is T (+2)." / "P exposes: X is T (+2).") or the viewer's private intel. */
+/** [, discloser (public only), employee, trait label, weight]. Kept in step with the engine by game.test.ts. */
+export const REVEAL_LINE = /^(?:(.+?) disclosed publicly|You now know): (.+?) \(.+?\) is (.+?) \(([+\d]+)\)\.$/;
+/** Newest reveal line: public ("P disclosed publicly: X (Dept) is T (+2)." — from a Reveal event or a later
+ *  "Expose publicly" of intel, e.g. learned via a card's reveal effect) or the viewer's private
+ *  "You now know: X (Dept) is T (+2)." Engine wording: src/engine/game.ts, rules.ts. */
 function latestReveal(view: GameView, client: GameClient): { i: number; html: string; priv: boolean } | null {
   for (let i = view.log.length - 1; i >= 0; i--) {
     const l = view.log[i];
     if (l.tag !== 'reveal') continue;
     const priv = l.visibility !== 'public';
     if (priv && !(ui.canAct && l.visibility === client.me)) continue;
-    const m = /^(?:(.+?) exposes|Revealed|Intel): (.+?) is (.+?) \(([+\d]+)\)\.$/.exec(l.text);
+    const m = REVEAL_LINE.exec(l.text);
     const e = m && view.employees.find(x => x.name === m[2]);
     if (!m || !e) continue;
     const who = `<b>${esc(e.name)}</b> <span class="muted">(${deptName(view, e.deptId)})</span> is <span class="tchip">${esc(m[3])} <span class="w">(${esc(m[4])})</span></span>`;
@@ -241,31 +245,34 @@ export function createResults(root: HTMLElement, rerender: () => void = () => {}
       if (!ui.eventResultOpen && deferred.length) { const d = deferred; deferred = []; d.slice(-1).forEach(f => f()); }
       if (lastCard !== undefined && ck !== lastCard && c) show(() => showBanner(root, view, c));
       lastCard = ck;
+      checkEvent(view);
+      // After the event outcome may have opened: a reveal settled by that event waits for its modal to close.
       const rv = latestReveal(view, client);
       if (lastReveal !== undefined && rv && rv.i > lastReveal) show(() => showRevealBanner(root, rv.html, rv.priv));
       lastReveal = Math.max(lastReveal ?? -1, rv?.i ?? -1);
-
-      const er = (view as GameView & { lastEventResult?: EventResult }).lastEventResult;
-      if (er) {
-        if (lastEvent !== undefined && er.actionCount !== lastEvent) openOutcome(er, view);
-        lastEvent = er.actionCount;
-        return;
-      }
-      // Fallback: open event → snapshot; snapshot's event gone → derive from the log.
-      const ev = view.activeEvent;
-      const key = ev ? `${view.round}:${view.currentPlayer}:${ev.card.id}` : '';
-      if (snap && snap.key !== key) {
-        if (lastEvent !== undefined) openOutcome(deriveEvent(view, snap), view);
-        snap = null;
-      }
-      if (ev && !snap) {
-        let from = view.log.length;
-        for (let i = view.log.length - 1; i >= 0; i--) if (view.log[i].text.startsWith(`Event — ${ev.card.title}`)) { from = i; break; }
-        snap = { ev, from, player: view.currentPlayer, key };
-      } else if (ev && snap) snap.ev = ev; // keep votes/outcome fresh
-      lastEvent = 0;
     },
   };
+  function checkEvent(view: GameView) {
+    const er = (view as GameView & { lastEventResult?: EventResult }).lastEventResult;
+    if (er) {
+      if (lastEvent !== undefined && er.actionCount !== lastEvent) openOutcome(er, view);
+      lastEvent = er.actionCount;
+      return;
+    }
+    // Fallback: open event → snapshot; snapshot's event gone → derive from the log.
+    const ev = view.activeEvent;
+    const key = ev ? `${view.round}:${view.currentPlayer}:${ev.card.id}` : '';
+    if (snap && snap.key !== key) {
+      if (lastEvent !== undefined) openOutcome(deriveEvent(view, snap), view);
+      snap = null;
+    }
+    if (ev && !snap) {
+      let from = view.log.length;
+      for (let i = view.log.length - 1; i >= 0; i--) if (view.log[i].text.startsWith(`Event — ${ev.card.title}`)) { from = i; break; }
+      snap = { ev, from, player: view.currentPlayer, key };
+    } else if (ev && snap) snap.ev = ev; // keep votes/outcome fresh
+    lastEvent = 0;
+  }
 }
 
 export const resultActions: Handlers = {

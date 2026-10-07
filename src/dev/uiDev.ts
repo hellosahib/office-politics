@@ -6,6 +6,7 @@
 //       o event outcome modal (Global) · b card banner (success) · f card banner (failure) · r trait reveal banners
 import type { GameClient } from '../client';
 import type { Action, EmployeeId, GameView, Pending, PlayerId, PlayerView, Prediction } from '../engine/types';
+import { TRAIT_DIMENSIONS } from '../engine/types';
 import { AGENDAS, buildEventDeck, buildInfluenceDeck } from '../content';
 import { makeMockView } from './mockView';
 import { mountGame } from '../ui/game';
@@ -107,9 +108,11 @@ function scenario(key: string): void {
     }
     case 'r':
       view.log = [...view.log,
-        { round: 3, turn: 1, text: 'Revealed: Riya Shah is Cautious (+2).', visibility: 'public', tag: 'reveal' },
-        { round: 3, turn: 0, text: 'Intel: Kabir Anand is Gossip (+2).', visibility: 0, tag: 'reveal' }];
-      view.players[0].intel = [{ employeeId: 'kabir-anand', deptId: 'engineering', trait: 'Gossip', weight: 2 }, ...view.players[0].intel!] as PlayerView['intel'];
+        // engine wording (src/engine/game.ts); the banner shows the newest line
+        { round: 3, turn: 0, text: 'You now know: Kabir Anand (Engineering) is Gossip (0).', visibility: 0, tag: 'reveal' },
+        { round: 3, turn: 1, text: 'Tanya disclosed publicly: Mehul Sethi (Engineering) is By-the-book (+2).', visibility: 'public', tag: 'reveal' }];
+      Object.assign(view.employees.find(e => e.id === 'mehul-sethi')!, { hiddenTrait1: 'ByTheBook', hiddenTrait1Public: true });
+      view.players[0].intel = [{ employeeId: 'kabir-anand', deptId: 'engineering', trait: 'Gossip', weight: 0 }, ...view.players[0].intel!] as PlayerView['intel'];
       break;
     case '7': set({ kind: 'save', player: 0 }, 'save'); view.players[0].influence = 2; break;
     case '8':
@@ -128,6 +131,12 @@ function scenario(key: string): void {
     case '9': set({ kind: 'accusation', player: 0, employeeId: 'tanya-jain' }, 'accusation'); break;
     case '0':
       set({ kind: 'gameOver' }, 'gameOver');
+      // engine: at game over every hidden trait is filled in; hiddenTraitXPublic keeps whether it was disclosed in play
+      view.employees.forEach((e, i) => {
+        const other = Object.values(TRAIT_DIMENSIONS).filter(d => !d.includes(e.permanentTrait));
+        e.hiddenTrait1 ??= other[i % other.length][i % 2];
+        e.hiddenTrait2 ??= other[(i + 1) % other.length][(i + 1) % 2];
+      });
       view.config = { ...view.config, mode: 'Election', rounds: 10 };
       view.winner = 1;
       view.players.forEach((p, i) => { p.agenda = AGENDAS[i]; });

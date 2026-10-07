@@ -5,6 +5,7 @@ import { E, reaction } from './rules';
 import { TRAIT_DIMENSIONS, dimensionOf } from './types';
 import type { Action, Department, EventCard, EventEffect, GameConfig, InfluenceCard, PlayerId } from './types';
 import { buildEventDeck, buildInfluenceDeck } from '../content';
+import { REVEAL_LINE } from '../ui/results';
 
 // ---------------------------------------------------------------- helpers
 const cfg = (o: Partial<GameConfig> = {}): GameConfig => {
@@ -615,6 +616,8 @@ describe('promises and events (D7, D8, D14, D19, D21, §29, §48)', () => {
     expect(g.dispatch({ type: 'exposeIntel', player: 1, employeeId: pd.employeeId, trait: pd.trait }).ok).toBe(true);
     const pub = g.view(0).employees.find((e) => e.id === pd.employeeId)!;
     expect(pd.weight === 2 ? pub.hiddenTrait1 : pub.hiddenTrait2).toBe(pd.trait);
+    // the public "Trait disclosed" banner parses this line (src/ui/results.ts)
+    expect(REVEAL_LINE.exec(g.state.log.at(-1)!.text)?.slice(1, 3)).toEqual(['P1', pub.name]);
     done(g);
     const q = g.state.pending;
     if (q.kind !== 'revealChoice') throw new Error('expected reveal');
@@ -842,6 +845,8 @@ describe('event outcome for the UI (D41)', () => {
     h.dispatch({ type: 'revealChoice', player: 0, mode: 'public' });
     expect(h.view(2).lastEventResult!.perPlayer[0].changes[0]).toMatchObject({ public: true, trait: q.trait });
     expect(h.state.log.some((l) => l.visibility === 'public' && l.text.startsWith(`P0 disclosed publicly: ${E(h.state, q.employeeId).name}`))).toBe(true);
+    expect(h.state.log.filter((l) => l.tag === 'reveal').every((l) => REVEAL_LINE.test(l.text))).toBe(true);
+    expect(g.state.log.filter((l) => l.tag === 'reveal' && l.visibility === 0).every((l) => REVEAL_LINE.test(l.text))).toBe(true);
   });
 
   it('exposes turn info, department lead names and affected departments', () => {

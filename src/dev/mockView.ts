@@ -5,9 +5,9 @@ import {
   type DepartmentView, type EmployeeView, type GameView, type InfluenceCard, type LoyaltyState, type PlayerId, type PlayerView,
 } from '../engine/types';
 
-type Patch = Partial<Pick<EmployeeView, 'loyalty' | 'politicalOwner' | 'promise' | 'mole' | 'hiddenTrait1' | 'hiddenTrait1Public' | 'rebelInclination'>>;
+type Patch = Partial<Pick<EmployeeView, 'loyalty' | 'politicalOwner' | 'promise' | 'mole' | 'hiddenTrait1' | 'hiddenTrait1Public' | 'hiddenTrait2' | 'hiddenTrait2Public' | 'rebelInclination'>>;
 
-// viewer = player 0 (Sahib)
+// viewer = player 0 (Sahib). Traits: a mix of public reveals, private intel (non-null, not public) and unknown.
 const LEADS: Record<'full' | 'mini', Record<string, PlayerId | null>> = {
   full: { engineering: 0, sales: 0, product: 1, marketing: 1, finance: 2, people: null, operations: null },
   mini: { engineering: 0, product: 1, sales: 2, operations: null },
@@ -16,11 +16,11 @@ const LEADS: Record<'full' | 'mini', Record<string, PlayerId | null>> = {
 const PATCH: Record<string, Patch> = {
   // engineering (P0): solid
   'sahib-singh': { loyalty: 'Loyal', politicalOwner: 0, hiddenTrait1: 'CreditHungry', hiddenTrait1Public: true },
-  'riya-shah': { loyalty: 'Favorable', politicalOwner: 0 },
-  'kabir-anand': { loyalty: 'Favorable', politicalOwner: 0, promise: { byPlayer: 0, expiresRound: 5 } },
+  'riya-shah': { loyalty: 'Favorable', politicalOwner: 0, hiddenTrait2: 'Cautious', hiddenTrait2Public: true },
+  'kabir-anand': { loyalty: 'Favorable', politicalOwner: 0, hiddenTrait1: 'Ambitious', hiddenTrait1Public: true, hiddenTrait2: 'Gossip', promise: { byPlayer: 0, expiresRound: 5 } },
   'mehul-sethi': { loyalty: 'Skeptical', politicalOwner: null },
   // product (P1): one of our moles in there
-  'neha-kapoor': { loyalty: 'Loyal', politicalOwner: 1 },
+  'neha-kapoor': { loyalty: 'Loyal', politicalOwner: 1, hiddenTrait1: 'Ambitious' },
   'vikram-rao': { loyalty: 'Favorable', politicalOwner: 1 },
   'tanya-jain': {
     loyalty: 'Favorable', politicalOwner: 1,
@@ -30,7 +30,7 @@ const PATCH: Record<string, Patch> = {
   // sales: unstable (2 rebels)
   'sameer-khanna': { loyalty: 'Rebel', politicalOwner: null, rebelInclination: 0 },
   'pooja-nair': { loyalty: 'Rebel', politicalOwner: null },
-  'rohit-bedi': { loyalty: 'Favorable', politicalOwner: 0 },
+  'rohit-bedi': { loyalty: 'Favorable', politicalOwner: 0, hiddenTrait2: 'Lazy' },
   'simran-arora': { loyalty: 'Loyal', politicalOwner: 0 },
   // marketing (P1)
   'aisha-khan': { loyalty: 'Favorable', politicalOwner: 1 },
@@ -63,7 +63,7 @@ export function makeMockView(board: 'full' | 'mini'): GameView {
     return {
       id: e.id, deptId: e.deptId, name: e.name, role: e.role, visual: e.visual, permanentTrait: e.permanentTrait,
       hiddenTrait1: p.hiddenTrait1 ?? null, hiddenTrait1Public: p.hiddenTrait1Public ?? false,
-      hiddenTrait2: null, hiddenTrait2Public: false,
+      hiddenTrait2: p.hiddenTrait2 ?? null, hiddenTrait2Public: p.hiddenTrait2Public ?? false,
       loyalty, loyaltyScore: LOYALTY_SCORE[loyalty], politicalOwner: owner(p, e.deptId),
       rebelInclination: p.rebelInclination ?? null, promise: p.promise ?? null, mole: p.mole ?? null,
     };

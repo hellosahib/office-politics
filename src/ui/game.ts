@@ -26,6 +26,13 @@ const handlers: Handlers = {
 };
 
 /** Mounts the game into `root`. Returns a dispose function. `onExit` is called by Leave / Back to lobby. */
+/** The board paints every trait the view knows; private intel only while this seat may see private info. */
+function boardView(view: GameView): GameView {
+  if (ui.canAct || view.phase === 'gameOver') return view;
+  return { ...view, employees: view.employees.map(e => ({ ...e,
+    hiddenTrait1: e.hiddenTrait1Public ? e.hiddenTrait1 : null, hiddenTrait2: e.hiddenTrait2Public ? e.hiddenTrait2 : null })) };
+}
+
 export function mountGame(root: HTMLElement, client: GameClient, onExit: () => void): () => void {
   Object.assign(ui, { acceptedMe: null, inspect: null, logDept: null, logTag: 'all', error: null, selectedCard: null, selectedTarget: null, giveCard: null,
     hoverTarget: null, eventPick: null, introFor: null, holdEvent: false, eventResultOpen: false });
@@ -94,7 +101,7 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
     if (curtain) {
       // Nothing private may sit under the curtain.
       for (const s of ['hand', 'emp', 'event', 'modal', 'dash']) setHtml(slot(s), '');
-      board.update(view, {});
+      board.update(boardView(view), {});
       return;
     }
     cinema.plan(view, client);
@@ -120,7 +127,7 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
     el.classList.toggle('show-log', ui.showLog);
     el.classList.toggle('has-hand', slot('hand').innerHTML !== '');
     el.classList.toggle('hand-collapsed', !ui.handOpen);
-    board.update(view, boardOptions(view));
+    board.update(boardView(view), boardOptions(view));
     cinema.run();
   }
 

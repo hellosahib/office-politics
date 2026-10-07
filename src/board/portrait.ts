@@ -60,8 +60,14 @@ const shade = (hex: string, f: number) => {
   return `rgb(${c(n >> 16)},${c((n >> 8) & 255)},${c(n & 255)})`;
 };
 
-/** Draws one portrait card into a PORTRAIT_W × PORTRAIT_H box at (x, y). */
-export function drawPortrait(c: CanvasRenderingContext2D, e: PortraitSubject, x = 0, y = 0): void {
+/** One trait as the viewer knows it, for the board's trait band. */
+export interface TraitTag { label: string; weight: number; state: 'public' | 'private' | 'unknown' }
+
+/** Draws one portrait card into a PORTRAIT_W × PORTRAIT_H box at (x, y).
+ *  With `tags` (board only) the name moves into a header at the top of the card with the trait band
+ *  under it (top, so the front row of standees never hides the back row's traits): one row per trait,
+ *  or a single row of 3-letter pills when `compact`. The figure shifts down to make room. */
+export function drawPortrait(c: CanvasRenderingContext2D, e: PortraitSubject, x = 0, y = 0, tags?: TraitTag[], compact = false): void {
   const L = lookFor(e);
   const W = PORTRAIT_W, H = PORTRAIT_H;
   c.save();
@@ -80,6 +86,8 @@ export function drawPortrait(c: CanvasRenderingContext2D, e: PortraitSubject, x 
   c.fillStyle = 'rgba(0,0,0,.10)';
   for (let i = 0; i < 7; i++) { c.beginPath(); c.moveTo(0, 30 + i * 30); c.lineTo(W, -10 + i * 30); c.lineTo(W, 2 + i * 30); c.lineTo(0, 42 + i * 30); c.fill(); }
 
+  const headH = !tags ? 0 : compact ? 104 : 54 + tags.length * 30;
+  if (tags) c.translate(0, headH - 36); // figure below the header (undone by the unclip restore)
   const cx = W / 2 + (L.relaxed ? 6 : 0), headY = 128;
   // long hair behind head
   c.fillStyle = L.hair;
@@ -166,26 +174,84 @@ export function drawPortrait(c: CanvasRenderingContext2D, e: PortraitSubject, x 
   }
   c.restore(); // unclip
 
-  // prop chip, bottom right
-  const px = W - 50, py = H - 92;
-  c.fillStyle = 'rgba(14,15,18,.82)';
-  c.beginPath(); c.arc(px, py, 32, 0, Math.PI * 2); c.fill();
-  c.strokeStyle = '#d9ad62'; c.lineWidth = 2.5; c.stroke();
-  drawProp(c, L.prop, px, py);
+  // prop chip, bottom right (the board's trait band takes this space)
+  if (!tags) {
+    const px = W - 50, py = H - 92;
+    c.fillStyle = 'rgba(14,15,18,.82)';
+    c.beginPath(); c.arc(px, py, 32, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = '#d9ad62'; c.lineWidth = 2.5; c.stroke();
+    drawProp(c, L.prop, px, py);
+  }
 
-  // name band
+  // name band: bottom strip (dossier), or the board's header with the trait band under the name
+  const nameY = tags ? 30 : H - 28;
   const first = e.name.split(/\s+/)[0].toUpperCase();
-  c.fillStyle = 'rgba(10,11,13,.86)';
-  c.beginPath(); c.roundRect(4, H - 52, W - 8, 48, [0, 0, 26, 26]); c.fill();
+  c.fillStyle = tags ? 'rgba(10,11,13,.92)' : 'rgba(10,11,13,.86)';
+  c.beginPath();
+  if (tags) c.roundRect(4, 4, W - 8, headH, [26, 26, 0, 0]); else c.roundRect(4, H - 52, W - 8, 48, [0, 0, 26, 26]);
+  c.fill();
   c.fillStyle = '#ece7de'; c.textAlign = 'center'; c.textBaseline = 'middle';
   let px2 = 30;
   c.font = `700 ${px2}px Archivo, 'Arial Narrow', system-ui, sans-serif`;
   while (c.measureText(first).width > W - 40 && px2 > 14) c.font = `700 ${--px2}px Archivo, 'Arial Narrow', system-ui, sans-serif`;
-  c.fillText(first, W / 2, H - 28);
+  c.fillText(first, W / 2, nameY);
+  if (tags) drawTraitBand(c, tags, compact, 56);
   // frame
   c.strokeStyle = 'rgba(232,196,128,.55)'; c.lineWidth = 3;
   c.beginPath(); c.roundRect(5.5, 5.5, W - 11, H - 11, 25); c.stroke();
   c.restore();
+}
+
+const TAG_INK = { public: '#ece7de', private: '#e8c480', unknown: '#77736c' } as const;
+/** Compact pill text: first 3 letters + weight, e.g. "AMB+1", "BYT+1", "???0". */
+const tagText = (t: TraitTag) => `${t.label.toUpperCase().replace(/[^A-Z?]/g, '').slice(0, 3)}${t.weight > 0 ? `+${t.weight}` : t.weight}`;
+
+/** Small padlock, ~14×16, centred at (x, y): marks a trait only this viewer knows. */
+function drawLock(c: CanvasRenderingContext2D, x: number, y: number, col: string, k = 1): void {
+  c.save(); c.translate(x, y); c.scale(k, k);
+  c.strokeStyle = c.fillStyle = col; c.lineWidth = 2.4;
+  c.beginPath(); c.arc(0, -3, 4.5, Math.PI, 0); c.lineTo(4.5, 0); c.moveTo(-4.5, 0); c.lineTo(-4.5, -3); c.stroke();
+  c.beginPath(); c.roundRect(-7, -1, 14, 10, 2); c.fill();
+  c.restore();
+}
+
+/** Trait rows (or one row of pills) inside the name band, starting at `top`. */
+function drawTraitBand(c: CanvasRenderingContext2D, tags: TraitTag[], compact: boolean, top: number): void {
+  const W = PORTRAIT_W;
+  c.textBaseline = 'middle';
+  if (compact) {
+    const gap = 5, pw = (W - 20 - gap * (tags.length - 1)) / tags.length, ph = 44, py = top;
+    tags.forEach((t, i) => {
+      const px = 10 + i * (pw + gap), ink = TAG_INK[t.state];
+      c.beginPath(); c.roundRect(px, py, pw, ph, 8);
+      c.fillStyle = t.state === 'unknown' ? 'rgba(255,255,255,.03)' : t.state === 'private' ? 'rgba(232,196,128,.16)' : 'rgba(236,231,222,.12)';
+      c.fill();
+      c.setLineDash(t.state === 'unknown' ? [5, 4] : []); c.strokeStyle = ink; c.lineWidth = 2; c.stroke(); c.setLineDash([]);
+      const txt = tagText(t);
+      let fs = 34;
+      do c.font = `800 extra-condensed ${fs}px Archivo, 'Arial Narrow', system-ui, sans-serif`; while (c.measureText(txt).width > pw - 8 && --fs > 12);
+      c.fillStyle = ink; c.textAlign = 'center';
+      c.fillText(txt, px + pw / 2, py + ph / 2 + 1);
+      if (t.state === 'private') { c.fillStyle = '#0a0b0d'; c.beginPath(); c.arc(px + 4, py + 2, 11, 0, Math.PI * 2); c.fill(); drawLock(c, px + 4, py + 1, ink, 0.85); }
+    });
+    return;
+  }
+  tags.forEach((t, i) => {
+    const y = top + i * 30 + 14, ink = TAG_INK[t.state];
+    const w = t.weight > 0 ? `+${t.weight}` : String(t.weight);
+    c.font = "600 22px 'Geist Mono', ui-monospace, monospace";
+    const ww = c.measureText(w).width;
+    c.fillStyle = ink; c.textAlign = 'right';
+    c.fillText(w, W - 22, y);
+    let right = W - 22 - ww - 10;
+    if (t.state === 'private') { drawLock(c, right - 7, y - 1, ink); right -= 22; }
+    const label = t.label.toUpperCase();
+    let fs = 23;
+    do c.font = `700 ${fs}px Archivo, 'Arial Narrow', system-ui, sans-serif`; while (c.measureText(label).width > right - 22 && --fs > 12);
+    c.textAlign = 'left';
+    c.fillText(label, 22, y);
+    if (t.state === 'unknown') { c.strokeStyle = 'rgba(119,115,108,.45)'; c.lineWidth = 1.5; c.setLineDash([4, 4]); c.beginPath(); c.moveTo(22, y + 14); c.lineTo(W - 22, y + 14); c.stroke(); c.setLineDash([]); }
+  });
 }
 
 /** Small line-art glyph of the character's signature prop, centred at (x, y), ~36px. */

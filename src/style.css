@@ -525,6 +525,15 @@ button.card:hover:not([aria-disabled="true"]) { --lift: -8px; box-shadow: 0 24px
 .scores td.total { font-weight: 700; color: var(--brass-hi); font-size: var(--fs-lg); }
 .agendas { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s2); }
 .agendas li { padding: 10px; border-radius: var(--r-ctl); background: var(--surface); box-shadow: inset 3px 0 0 var(--pc); }
+.reveal-all { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--s2); }
+.ra-dept { padding: 10px; border-radius: var(--r-ctl); background: var(--surface); box-shadow: inset 0 3px 0 var(--pc); }
+.ra-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.ra-dept ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.ra-emp { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px 6px 6px 8px; border-radius: 6px; background: var(--bg-2); box-shadow: inset 3px 0 0 var(--pc); }
+.ra-emp img { width: 34px; height: 42px; border-radius: 5px; }
+.ra-name { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: var(--fs-sm); }
+.ra-owner { margin: 1px 0 4px; }
+.tmark.was-hidden { color: var(--brass); }
 .credits { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
 .credits li { display: grid; grid-template-columns: 30px 1fr; }
 .anim-ceo .credits li { opacity: 0; animation: credit .6s var(--ease-out) forwards; animation-delay: calc(1.2s + var(--i) * .25s); }
@@ -778,6 +787,8 @@ button.card:hover:not([aria-disabled="true"]) { --lift: -8px; box-shadow: 0 24px
 .ts-emp.on { border-color: var(--brass); }
 .ts-emp img { width: 34px; height: 42px; border-radius: 6px; background: var(--bg-2); }
 .ts-name { font-size: 11.5px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ts-emp .tchips { flex-direction: column; align-items: center; gap: 2px; max-width: 100%; }
+.ts-emp .tchip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .emp-panel { z-index: 11; }
 
 /* ---------------------------------------------------------------- end-of-turn report */
