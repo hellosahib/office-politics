@@ -6,5 +6,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   base: process.env.VITE_BASE ?? './',
   build: { target: 'es2022', sourcemap: true },
+  // Agent worktrees live under .claude/; their edits must not reload the dev page.
+  server: { watch: { ignored: ['**/.claude/**', '**/dist/**'] } },
   test: { include: ['src/**/*.test.ts'] },
 });

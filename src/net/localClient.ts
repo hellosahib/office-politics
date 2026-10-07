@@ -1,11 +1,24 @@
 // Hot-seat client: one Game in memory; `me` follows whoever the engine waits on.
 import { Game, createRng, next } from '../engine';
-import type { GameConfig, PlayerId } from '../engine/types';
+import type { GameConfig, GameState, PlayerId } from '../engine/types';
 import type { GameClient } from '../client';
 import { BOT_DELAY_MS, MAX_BOT_RUN, botAction, botSeat } from './bots';
 
-export function createLocalClient(config: GameConfig): GameClient {
-  const game = Game.create(config);
+const SAVE_KEY = 'op:localGame';
+
+/** Resume the local game saved by the last session, if any (survives reloads, not tab close). */
+export function resumeLocalClient(): GameClient | null {
+  try {
+    const raw = sessionStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const state = JSON.parse(raw) as GameState;
+    return createLocalClient(state.config, new Game(state));
+  } catch { return null; }
+}
+
+export function createLocalClient(config: GameConfig, resumed?: Game): GameClient {
+  const game = resumed ?? Game.create(config);
+  const persist = () => { try { sessionStorage.setItem(SAVE_KEY, JSON.stringify(game.state)); } catch { /* quota / private mode */ } };
   const botRng = createRng((config.seed ^ 0x5eed_b07) >>> 0); // seeded so sims/replays of bot play are reproducible
   const listeners = new Set<() => void>();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -31,10 +44,12 @@ export function createLocalClient(config: GameConfig): GameClient {
       botRun++;
       const r = game.dispatch(botAction(game, seat, () => next(botRng)));
       if (!r.ok) { console.error('bot fallback rejected', r.error); botRun = MAX_BOT_RUN; }
+      persist();
       notify();
       pump();
     }, BOT_DELAY_MS);
   }
+  persist();
   pump(); // a bot may move first
 
   return {
@@ -43,12 +58,12 @@ export function createLocalClient(config: GameConfig): GameClient {
     getView: () => game.view(me()),
     async dispatch(action) {
       const r = game.dispatch(action);
-      if (r.ok) { botRun = 0; notify(); pump(); }
+      if (r.ok) { botRun = 0; persist(); notify(); pump(); }
       return r;
     },
     legalTargets: (cardId) => { const m = me(); return m === null ? [] : game.legalTargets(m, cardId); },
     predict: (cardId, targetId) => game.predict(me() ?? 0, cardId, targetId),
     subscribe(l) { listeners.add(l); return () => listeners.delete(l); },
-    leave() { clearTimeout(timer); timer = undefined; botRun = MAX_BOT_RUN; listeners.clear(); },
+    leave() { clearTimeout(timer); timer = undefined; botRun = MAX_BOT_RUN; listeners.clear(); try { sessionStorage.removeItem(SAVE_KEY); } catch { /* ignore */ } },
   };
 }

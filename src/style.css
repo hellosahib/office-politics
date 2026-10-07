@@ -312,3 +312,8 @@ input[type="text"], input[type="number"], select {
   .tb-help { padding: 6px 7px; }
   .ht-art { padding: 4px 16px 40vh; }
 }
+
+/* resume bar (shown over the lobby after a reload) */
+.resume-bar { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-radius: 10px; background: #1b1f2a; border: 1px solid #2d3340; box-shadow: 0 8px 30px rgba(0,0,0,.5); z-index: 50; font-size: 14px; }
+.resume-bar button { padding: 6px 12px; border-radius: 8px; border: 1px solid #3a4150; background: #2a3040; color: inherit; cursor: pointer; }
+.resume-bar button[data-resume] { background: #2f80ed; border-color: #2f80ed; color: #fff; }
