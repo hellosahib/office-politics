@@ -6,7 +6,7 @@ import { colourNames, deptName, esc, pname, ui, weightLabel, type Handlers } fro
 
 /** Known trait = stamped chip; unknown = redacted bar. */
 const trait = (label: string, t: TraitPole | null, w: number, isPublic = true) => `<div class="trait-row"><span class="trait-k">${label}</span>${t
-  ? `<span class="stamp">${TRAIT_LABEL[t]} <span class="w">${weightLabel(w)}</span></span>${isPublic ? '' : ' <span class="tag-private">private</span>'}`
+  ? `<span class="stamp">${TRAIT_LABEL[t]} <span class="w">${weightLabel(w)}</span></span>${label === 'Known' ? '' : isPublic ? ' <span class="tag">public</span>' : ' <span class="tag-private">🔒 private</span>'}`
   : `<span class="redacted" title="Unknown trait (???)" aria-label="Unknown trait">███████</span><span class="w muted">${weightLabel(w)}</span>`}</div>`;
 
 export function employeeHtml(view: GameView): string {

@@ -50,11 +50,15 @@ const SECTIONS: [id: string, title: string, html: string][] = [
     <p>Reveal events show you a hidden trait. Choose <b>Public</b> (free, everyone sees it) or <b>Private</b> (1 Influence, only you know — it goes to your Private intel, and you can expose it later).</p>`],
 
   ['cards', 'Influence & cards', `
-    <p><b>Influence</b> is the only resource. It refills each turn to your rank's level (4 / 5 / 6 / 7) and unused Influence is lost. Owning departments costs upkeep from the same pool:</p>
+    <p><b>Influence</b> is the only resource. At the start of your turn you gain your rank's level (4 / 5 / 6 / 7). While it isn't your turn, the dashboard shows that per-turn amount. Owning departments costs upkeep from the same pool:</p>
     <table class="ht-t"><tr><th>Departments</th><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td></tr>
       <tr><th>Cost per turn</th><td>0</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td></tr></table>
-    <p>You get <b>4 cards</b> a turn. Each turn choose a focus: <b>Manage</b> (employees in your own departments) or <b>Expand</b> (everyone else). A card's mode says where it works: Internal, External or Both.</p>
-    <p><b>Reading a card:</b> cost (brass coin, top left) · direction (↑ positive, ↓ hostile, ◉ mole) · category art · mode · base effect · green trait affinities help, red ones hurt · <b>Strong</b> bonus · <b>Backfire</b> on failure.</p>
+    <p>You get <b>4 cards</b> a turn. A card's <b>direction</b> decides who it can target, shown on the card:</p>
+    <ul><li><b>↑ Your team</b> — positive cards work on your own departments (and Neutral ones).</li>
+      <li><b>↓ Other teams</b> — hostile cards work on rival players' departments (and Neutral ones).</li>
+      <li><b>◉ Other teams</b> — moles are planted in rival players' departments.</li></ul>
+    <p>A card with nobody it can reach says so (e.g. "No one on your team can be targeted right now").</p>
+    <p><b>Reading a card:</b> cost (brass coin, top left) · direction (↑ positive, ↓ hostile, ◉ mole) · category art · who it targets · base effect · green trait affinities help, red ones hurt · <b>Strong</b> bonus · <b>Backfire</b> on failure.</p>
     <p class="ht-formula">Score = base + rank bonus + trait matches + event modifiers + random (−1 / 0 / +1)</p>
     <p>Matching a trait adds its weight (+1 known, +2 or 0 hidden); an adverse match subtracts it. The random roll is 0 most of the time (60%).</p>
     <table class="ht-t"><tr><th>Score</th><th>Result</th></tr>
@@ -68,12 +72,11 @@ const SECTIONS: [id: string, title: string, html: string][] = [
   ['turn', 'A turn, step by step', `
     <ol>
       <li><b>Event</b> — a card is drawn and resolved (see Events).</li>
-      <li><b>Influence refresh</b> — back to your rank maximum, plus anything you banked off-turn.</li>
+      <li><b>Influence</b> — you gain your rank's amount.</li>
       <li><b>Management cost</b> — paid automatically. Can't pay it all? <b>Internal Instability</b>: two employees in one of your departments each drop a step.</li>
       <li><b>Draw</b> 4 cards.</li>
       <li><b>Negotiate</b> — out loud, by voice or in the room (there is no chat). Deals aren't binding. To trade, <b>give a saved card</b>; two gifts make a swap.</li>
-      <li><b>Manage or Expand</b>.</li>
-      <li><b>Play</b> as many cards as you can afford.</li>
+      <li><b>Play</b> as many cards as you can afford: click a card and a <b>target window</b> opens.</li>
       <li><b>Save</b> up to 3 cards.</li>
       <li><b>End turn</b> — a summary shows everything that changed.</li></ol>`],
 
@@ -126,7 +129,9 @@ const SECTIONS: [id: string, title: string, html: string][] = [
   ['screen', 'Reading the screen', `
     <ul><li><b>Top bar</b>: round, whose turn, current phase. On phones the menu and log icons open the side panels.</li>
       <li><b>Dashboard</b> (left): your rank, Influence meter, upkeep, saved cards, agenda and private intel; all players below.</li>
-      <li><b>Hand</b> (bottom): pick a card, then a highlighted employee; a forecast bar shows the possible outcomes before you commit.</li>
+      <li><b>Hand</b> (bottom): click a card to open the <b>target window</b>. It lists everyone the card can reach, grouped by department (with its lead), each with loyalty, side and trait chips — green traits help the card, red ones hurt it, <b>???</b> is still hidden, 🔒 is private intel only you know. Hover or pick someone to see the forecast bar and the Influence it needs, then <b>Play card</b>. Highlighted employees on the board can be clicked too.</li>
+      <li><b>After each card</b> a banner shows everyone what happened. <b>After each event</b> an outcome window shows the vote and what changed for each player's team.</li>
+      <li><b>Events</b> show the team members they can affect under the card; click one to open their file.</li>
       <li><b>Log</b> (right): public history; purple lines are private to you. Click a department to filter it.</li>
       <li><b>Personnel file</b>: click any employee for their portrait, traits (striped bars = unknown), loyalty ladder, side and recent actions.</li></ul>
     <h4>On the board</h4>

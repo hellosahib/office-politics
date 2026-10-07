@@ -4,7 +4,10 @@ import type { Action, GameView } from '../engine/types';
 import type { GameClient } from '../client';
 import { createBoard, type BoardOptions } from '../board/board';
 import { esc, isMine, markEntered, motionOK, runEnter, setHtml, tweenMeters, ui, type Ctx, type Handlers } from './helpers';
-import { canPlay, focusChooserHtml, handActions, handHtml } from './hand';
+import { canPlay, handActions, handHtml } from './hand';
+import { pickerActions, pickerHtml } from './picker';
+import { cinemaActions, createCinema, introHtml } from './cinema';
+import { createResults, eventResultHtml, resultActions } from './results';
 import { saveHtml, summaryActions, summaryHtml } from './summary';
 import { eventActions, eventHtml } from './eventModal';
 import { employeeActions, employeeHtml } from './employeePanel';
@@ -17,14 +20,16 @@ import { openHelp } from './howToPlay';
 
 const handlers: Handlers = {
   ...handActions, ...summaryActions, ...eventActions, ...employeeActions, ...dashboardActions,
-  ...logActions, ...accusationActions, ...curtainActions, ...endGameActions,
+  ...logActions, ...accusationActions, ...curtainActions, ...endGameActions, ...pickerActions, ...cinemaActions, ...resultActions,
   'toast-close': (_el, c) => { ui.error = null; c.render(); },
   'help': () => openHelp(),
 };
 
 /** Mounts the game into `root`. Returns a dispose function. `onExit` is called by Leave / Back to lobby. */
 export function mountGame(root: HTMLElement, client: GameClient, onExit: () => void): () => void {
-  Object.assign(ui, { acceptedMe: null, inspect: null, logDept: null, logTag: 'all', error: null, selectedCard: null, selectedTarget: null, giveCard: null });
+  Object.assign(ui, { acceptedMe: null, inspect: null, logDept: null, logTag: 'all', error: null, selectedCard: null, selectedTarget: null, giveCard: null,
+    hoverTarget: null, eventPick: null, introFor: null, holdEvent: false, eventResultOpen: false });
+  ui.undealt.clear(); ui.flown.clear();
   root.innerHTML = `<div class="game">
     <div id="board" class="board"></div>
     <header class="topbar" data-slot="topbar"></header>
@@ -45,6 +50,8 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
   let disposed = false;
   let toastTimer = 0;
   let firstPaint = true;
+  const cinema = createCinema(el, () => render());
+  const results = createResults(el);
 
   const ctx: Ctx = {
     get view() { return client.getView(); },
@@ -76,7 +83,7 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
     const key = `${view.actionCount}:${client.me}`;
     if (key !== lastKey) {
       lastKey = key;
-      ui.selectedCard = ui.selectedTarget = ui.giveCard = null;
+      ui.selectedCard = ui.selectedTarget = ui.giveCard = ui.hoverTarget = ui.eventPick = null;
       ui.saveIds.clear();
     }
     const evId = view.activeEvent?.card.id ?? '';
@@ -90,14 +97,17 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
       board.update(view, {});
       return;
     }
+    cinema.plan(view, client);
+    results.check(view, client);
     setHtml(slot('topbar'), topbarHtml(view, client));
     setHtml(slot('dash'), dashboardHtml(view, client));
-    setHtml(slot('log'), logHtml(view));
+    setHtml(slot('log'), logHtml(view, client));
     setHtml(slot('hand'), handHtml(view, client));
     setHtml(slot('emp'), employeeHtml(view));
     setHtml(slot('event'), eventHtml(view, client));
-    setHtml(slot('modal'), endGameHtml(view) || focusChooserHtml(view, client) || saveHtml(view, client)
-      || summaryHtml(view, client) || accusationHtml(view, client));
+    // One centred modal at a time. The event outcome is read before the active player's next controls appear.
+    setHtml(slot('modal'), endGameHtml(view) || introHtml(view) || eventResultHtml(view, results.current())
+      || saveHtml(view, client) || summaryHtml(view, client) || accusationHtml(view, client) || pickerHtml(view, client));
     setHtml(slot('toast'), ui.error
       ? `<div class="toast" role="alert">${esc(ui.error)} <button type="button" class="link" data-act="toast-close" aria-label="Dismiss">✕</button></div>` : '');
     if (ui.error) { clearTimeout(toastTimer); toastTimer = window.setTimeout(() => { ui.error = null; render(); }, 4000); }
@@ -111,13 +121,15 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
     el.classList.toggle('has-hand', slot('hand').innerHTML !== '');
     el.classList.toggle('hand-collapsed', !ui.handOpen);
     board.update(view, boardOptions(view));
+    cinema.run();
   }
 
   board.onEmployeeClick(id => {
     const view = client.getView();
     const p = view.pending;
     if (isMine(view, client) && p.kind === 'eventTarget' && p.choose === 'employee' && p.candidates.includes(id)) {
-      void ctx.act({ type: 'eventTarget', player: client.me!, targetId: id });
+      ui.eventPick = id; // selects in the picker; Confirm dispatches
+      render();
       return;
     }
     if (ui.selectedCard && canPlay(view, client) && client.legalTargets(ui.selectedCard).includes(id)) ui.selectedTarget = id;
@@ -128,7 +140,8 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
     const view = client.getView();
     const p = view.pending;
     if (isMine(view, client) && p.kind === 'eventTarget' && p.choose === 'dept' && p.candidates.includes(id)) {
-      void ctx.act({ type: 'eventTarget', player: client.me!, targetId: id });
+      ui.eventPick = id;
+      render();
       return;
     }
     ui.logDept = ui.logDept === id ? null : id;
@@ -149,6 +162,12 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
     render();
   };
   const onResize = () => board.resize();
+  // Picker rows preview their forecast on hover.
+  const onHover = (e: PointerEvent) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>('[data-hover]')?.dataset.hover ?? null;
+    if (id && id !== ui.hoverTarget) { ui.hoverTarget = id; render(); }
+  };
+  slot('modal').addEventListener('pointerover', onHover);
   // Hover tilt on hand cards (fine pointers only); the CSS reads --rx/--ry.
   const fine = window.matchMedia?.('(hover: hover) and (pointer: fine)').matches;
   const onTilt = (e: PointerEvent) => {

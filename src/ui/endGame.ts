@@ -45,8 +45,9 @@ export function endGameHtml(view: GameView): string {
   </div></div>`;
 }
 
-/** Brass-and-player-colour confetti, ~3 s, canvas overlay. Skipped under reduced motion. */
-export function confetti(host: HTMLElement, colors: string[]): void {
+/** Brass-and-player-colour confetti, ~3 s, canvas overlay. Skipped under reduced motion.
+ *  `o` makes a short burst (card banner): fewer bits, shorter life, custom origin (0..1 of the viewport). */
+export function confetti(host: HTMLElement, colors: string[], o: { count?: number; ms?: number; y?: number } = {}): void {
   if (!motionOK()) return;
   const cv = document.createElement('canvas');
   cv.className = 'confetti';
@@ -55,22 +56,22 @@ export function confetti(host: HTMLElement, colors: string[]): void {
   const W = (cv.width = innerWidth * d), H = (cv.height = innerHeight * d);
   const ctx = cv.getContext('2d')!;
   const palette = [...colors, '#d9ad62', '#f0c97f', '#ece7de'];
-  const bits = Array.from({ length: 160 }, (_, i) => ({
-    x: W * (0.2 + Math.random() * 0.6), y: H * 0.35, vx: (Math.random() - 0.5) * 18 * d, vy: (-10 - Math.random() * 14) * d,
+  const bits = Array.from({ length: o.count ?? 160 }, (_, i) => ({
+    x: W * (0.2 + Math.random() * 0.6), y: H * (o.y ?? 0.35), vx: (Math.random() - 0.5) * 18 * d, vy: (-10 - Math.random() * 14) * d,
     r: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.3, w: (6 + Math.random() * 6) * d, h: (10 + Math.random() * 8) * d,
     c: palette[i % palette.length],
   }));
-  const t0 = performance.now();
+  const t0 = performance.now(), life = o.ms ?? 3600;
   const tick = (now: number) => {
     const t = now - t0;
     ctx.clearRect(0, 0, W, H);
     for (const b of bits) {
       b.vy += 0.45 * d; b.vx *= 0.99; b.x += b.vx; b.y += b.vy; b.r += b.vr;
       ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.r); ctx.scale(1, Math.cos(t / 120 + b.r));
-      ctx.fillStyle = b.c; ctx.globalAlpha = Math.max(0, 1 - t / 3600); ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
+      ctx.fillStyle = b.c; ctx.globalAlpha = Math.max(0, 1 - t / life); ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
       ctx.restore();
     }
-    if (t < 3600 && cv.isConnected) requestAnimationFrame(tick); else cv.remove();
+    if (t < life && cv.isConnected) requestAnimationFrame(tick); else cv.remove();
   };
   requestAnimationFrame(tick);
 }

@@ -76,7 +76,8 @@ export function makeMockView(board: 'full' | 'mini'): GameView {
       ...d, employeeIds: emps.map((e) => e.id), teamLead: LEADS[board][d.id] ?? null, rebelCount,
       instability: (rebelCount >= 4 ? 3 : rebelCount === 3 ? 2 : rebelCount === 2 ? 1 : 0) as DepartmentView['instability'],
       protectedUntilRound: d.id === 'finance' ? 5 : 0,
-    };
+      leadName: LEADS[board][d.id] != null ? DEFAULT_PLAYER_NAMES[LEADS[board][d.id]!] : null,
+    } as DepartmentView;
   });
 
   const deck = buildInfluenceDeck(board);
@@ -98,7 +99,7 @@ export function makeMockView(board: 'full' | 'mini'): GameView {
       favorable: employees.filter((e) => e.politicalOwner === id && e.loyalty === 'Favorable').length,
       rebels: inMine.filter((e) => e.loyalty === 'Rebel').length,
       activeMoles: me ? employees.filter((e) => e.mole?.creator === 0).length : null,
-      intel: me ? [{ employeeId: 'neha-kapoor', trait: 'Ambitious', weight: 2 }] : null,
+      intel: me ? [{ employeeId: 'neha-kapoor', deptId: 'product', trait: 'Ambitious' as const, weight: 2 }] : null,
     };
   });
 
@@ -130,5 +131,6 @@ export function makeMockView(board: 'full' | 'mini'): GameView {
     winner: null,
     scores: null,
     actionCount: 12,
-  };
+    turn: { number: 7, drawnThisTurn: [], eventCardId: null },
+  } as GameView;
 }
