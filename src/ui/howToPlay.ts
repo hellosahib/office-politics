@@ -133,7 +133,8 @@ const SECTIONS: [id: string, title: string, html: string][] = [
       <li><b>After each card</b> a banner shows everyone what happened. <b>After each event</b> an outcome window shows the vote and what changed for each player's team.</li>
       <li><b>Events</b> show the team members they can affect under the card; click one to open their file.</li>
       <li><b>Log</b> (right): public history; purple lines are private to you. Click a department to filter it.</li>
-      <li><b>Personnel file</b>: click any employee for their portrait, traits (striped bars = unknown), loyalty ladder, side and recent actions.</li></ul>
+      <li><b>Personnel file</b>: click any employee (on the board, in the event strip, the target window or a name in the log) for a card with their portrait, traits (striped bars = unknown, 🔒 = only you know), loyalty ladder, side and recent actions. ✕, Escape or a click outside closes it.</li>
+      <li><b>Sound &amp; tutorial</b>: 🔊 / 🔇 in the top bar (and on the title screen) turns the sound effects on or off. New? <b>Tutorial</b> on the title screen plays a guided first turn against two bots.</li></ul>
     <h4>On the board</h4>
     <ul><li>Each employee is a portrait card on a small plinth. The ring around the plinth is loyalty: ${L} gold, ${F} green, ${N} grey, ${S} orange, ${R} red.</li>
       <li>The card's edge and plinth take the colour of the player they side with. ${L} employees wear a gold halo; ${R}s turn away from you.</li>
@@ -146,8 +147,9 @@ const SECTIONS: [id: string, title: string, html: string][] = [
 
 let open: HTMLElement | null = null;
 
-/** Opens the guide. Closing (✕, Escape, backdrop) restores focus to whatever opened it. */
-export function openHelp(): void {
+/** Opens the guide. Closing (✕, Escape, backdrop) restores focus to whatever opened it.
+ *  `onTutorial` (title screen only) adds a "Start the tutorial" button. */
+export function openHelp(onTutorial?: () => void): void {
   if (open) return;
   const back = document.activeElement as HTMLElement | null;
   const opts = SECTIONS.map(([id, t], i) => `<option value="${id}">${i + 1}. ${t}</option>`).join('');
@@ -156,6 +158,7 @@ export function openHelp(): void {
   el.innerHTML = `<div class="modal ht-box" role="dialog" aria-modal="true" aria-labelledby="ht-title">
     <div class="ht-head"><h2 id="ht-title">How to play</h2>
       <select class="ht-select" aria-label="Jump to section">${opts}</select>
+      ${onTutorial ? '<button type="button" class="primary" data-ht="tutorial">Start the tutorial</button>' : ''}
       <button type="button" class="close" data-ht="close" aria-label="Close">✕</button></div>
     <div class="ht-body">
       <nav class="ht-nav">${SECTIONS.map(([id, t]) => `<button type="button" class="link" data-ht="${id}">${t}</button>`).join('')}</nav>
@@ -173,7 +176,9 @@ export function openHelp(): void {
   el.addEventListener('click', e => {
     if (e.target === el) return close();
     const id = (e.target as HTMLElement).closest<HTMLElement>('[data-ht]')?.dataset.ht;
-    if (id === 'close') close(); else if (id) go(id);
+    if (id === 'close') close();
+    else if (id === 'tutorial') { close(); onTutorial?.(); }
+    else if (id) go(id);
   });
   el.querySelector('select')!.addEventListener('change', e => go((e.target as HTMLSelectElement).value));
   window.addEventListener('keydown', onKey, true);

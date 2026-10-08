@@ -18,6 +18,7 @@ import { curtainActions, curtainHtml } from './curtain';
 import { confetti, endGameActions, endGameHtml } from './endGame';
 import { openHelp } from './howToPlay';
 import { play as sfx, toggleMute } from './sound';
+import { startTutorial, takeTutorialRequest } from './tutorial';
 
 const handlers: Handlers = {
   ...handActions, ...summaryActions, ...eventActions, ...employeeActions, ...dashboardActions,
@@ -211,10 +212,12 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
   window.addEventListener('resize', onResize);
   const unsub = client.subscribe(render);
   render();
+  const stopTutorial = takeTutorialRequest() ? startTutorial(el, ctx) : null;
 
   function dispose(): void {
     if (disposed) return;
     disposed = true;
+    stopTutorial?.();
     clearTimeout(toastTimer);
     unsub();
     window.removeEventListener('keydown', onKey);

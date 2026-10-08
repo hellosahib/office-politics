@@ -24,6 +24,8 @@ export interface Board {
   onDeptClick(cb: (id: DeptId) => void): void;
   onEmployeeHover(cb: (id: EmployeeId | null) => void): void;
   focusDept(id: DeptId | null): void;
+  /** Screen rectangle (viewport px) around a department tile and its standees; used by the tutorial spotlight. */
+  deptScreenRect?(id: DeptId): DOMRect | null;
   resize(): void;
   dispose(): void;
 }
@@ -737,6 +739,17 @@ export function createBoard(container: HTMLElement): Board {
     onDeptClick: (cb) => void deptCbs.push(cb),
     onEmployeeHover: (cb) => void hoverCbs.push(cb),
     focusDept: (id) => { focused = id; applyFocus(); },
+    deptScreenRect: (id) => {
+      const p = deptPos.get(id);
+      if (!p) return null;
+      const r = container.getBoundingClientRect();
+      const xs: number[] = [], ys: number[] = [];
+      for (const [dx, dy, dz] of [[-R, 0, 0], [R, 0, 0], [0, 0, -R * 0.87], [0, 0, R * 0.87], [0, CARD_H + 0.3, 0]]) {
+        const v = new THREE.Vector3(p.x + dx, p.y + dy, p.z + dz).project(camera);
+        xs.push(r.left + ((v.x + 1) / 2) * r.width); ys.push(r.top + ((1 - v.y) / 2) * r.height);
+      }
+      return new DOMRect(Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    },
     resize,
     dispose: () => {
       cancelAnimationFrame(raf);

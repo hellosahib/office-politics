@@ -938,6 +938,29 @@ button.card:hover:not([aria-disabled="true"]) { --lift: -8px; box-shadow: 0 24px
 }
 @keyframes sheet-up { from { opacity: 0; transform: translateY(40px); } }
 
+/* ---------------------------------------------------------------- tutorial coach (src/ui/tutorial.ts) */
+.coach { position: fixed; inset: 0; z-index: 90; pointer-events: none; }
+.coach.dim { background: rgba(5, 5, 7, .55); }
+.coach-spot {
+  position: fixed; border-radius: var(--r-ctl); border: 2px solid var(--brass);
+  box-shadow: 0 0 0 9999px rgba(5, 5, 7, .55), 0 0 24px var(--brass); transition: all .3s var(--ease-out);
+}
+.coach-card {
+  position: fixed; pointer-events: auto; width: min(320px, calc(100vw - 16px)); padding: var(--s4);
+  background: var(--glass-strong); border: 1px solid var(--brass); border-radius: var(--r-panel); box-shadow: var(--shadow), var(--inner);
+  font-size: var(--fs-sm); transition: left .3s var(--ease-out), top .3s var(--ease-out);
+}
+.coach-card h3 { margin: 0 0 var(--s2); font-size: var(--fs-lg); }
+.coach-card p { margin: 0 0 var(--s2); color: var(--ink-2); }
+.coach-card b { color: var(--ink); }
+.coach-kicker { font: 600 var(--fs-xs)/1 var(--font-mono); text-transform: uppercase; letter-spacing: .16em; color: var(--brass); margin-bottom: var(--s2); }
+.coach-foot { display: flex; justify-content: space-between; align-items: center; margin-top: var(--s3); }
+.coach-wait { font: 600 var(--fs-xs)/1 var(--font-mono); text-transform: uppercase; letter-spacing: .12em; color: var(--brass); }
+button.tut-new { box-shadow: 0 0 0 0 var(--brass); animation: pulse-ring 2s infinite; }
+@keyframes pulse-ring { 70% { box-shadow: 0 0 0 10px transparent; } }
+@media (max-width: 760px) { .coach-card { padding: var(--s3); } .coach-card p { margin-bottom: 4px; } }
+@media (prefers-reduced-motion: reduce) { .coach-spot, .coach-card { transition: none; } }
+
 /* ---------------------------------------------------------------- how to play */
 .ht { z-index: 200; }
 .ht-box { display: flex; flex-direction: column; padding: 0; width: min(1000px, 100%); height: min(780px, 100%); overflow: hidden; }

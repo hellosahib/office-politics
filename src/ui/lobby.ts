@@ -6,6 +6,7 @@ import { createLocalClient, createRoom, isOnlineAvailable, joinRoom } from '../n
 import { esc } from './helpers';
 import { openHelp } from './howToPlay';
 import { muteButton, toggleMute } from './sound';
+import { requestTutorial, tutorialConfig, tutorialDone } from './tutorial';
 
 const NAME_KEY = 'officePolitics.name';
 const loadName = () => { try { return localStorage.getItem(NAME_KEY) ?? ''; } catch { return ''; } };
@@ -99,6 +100,7 @@ function heroHtml(): string {
     <p class="tagline">Win the office. Lose your friends.</p>
     <p class="pitch">Seven departments. Twenty-eight employees with hidden motives. Charm them, pressure them, plant moles, and climb to CEO.</p>
     <div class="title-actions">
+      <button type="button" class="${tutorialDone() ? 'ghost' : 'primary tut-new'}" data-act="tutorial">${tutorialDone() ? 'Tutorial' : 'New here? Tutorial'}</button>
       <button type="button" class="ghost" data-act="help">How to play</button>
       ${muteButton('mute', 'ghost')}
       <button type="button" class="ghost" data-act="theme" aria-label="Toggle light or dark theme">${theme() === 'light' ? 'Dark mode' : 'Light mode'}</button>
@@ -190,7 +192,14 @@ export function mountLobby(root: HTMLElement, onGame: (c: GameClient) => void): 
       s.busy = false; render();
     },
     'room-leave': () => leaveRoom(),
-    'help': () => openHelp(),
+    'help': () => openHelp(() => act.tutorial(el)),
+    'tutorial': () => {
+      let client: GameClient;
+      try { client = createLocalClient(tutorialConfig(s.names[0].trim())); }
+      catch (e) { s.error = String((e as Error)?.message ?? e); render(); return; }
+      requestTutorial();
+      dispose(); onGame(client);
+    },
     'mute': () => { toggleMute(); render(); },
     'theme': () => {
       const next = theme() === 'light' ? 'dark' : 'light';
