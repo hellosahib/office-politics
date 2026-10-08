@@ -3,9 +3,8 @@
 // Tiles are built once per layout and mutated on update(); all 28 employees share a handful of
 // instanced meshes plus one merged card mesh, so token draw calls stay constant (~8).
 import * as THREE from 'three';
-import type { DeptId, EmployeeId, EmployeeView, GameView, LoyaltyState, DepartmentView } from '../engine/types';
-import { TRAIT_LABEL } from '../engine/types';
-import { drawPortrait, PORTRAIT_H, PORTRAIT_W, type TraitTag } from './portrait';
+import type { DeptId, EmployeeId, GameView, LoyaltyState, DepartmentView } from '../engine/types';
+import { drawPortrait, PORTRAIT_H, PORTRAIT_W } from './portrait';
 import {
   badgeTexture, beamTexture, crackTexture, drawPlaque, floorTexture, glowTexture, groundTexture,
   PLAQUE_H, PLAQUE_W, type FloorKind, type PlaqueSpec,
@@ -25,6 +24,8 @@ export interface Board {
   onDeptClick(cb: (id: DeptId) => void): void;
   onEmployeeHover(cb: (id: EmployeeId | null) => void): void;
   focusDept(id: DeptId | null): void;
+  /** Screen rectangle (viewport px) around a department tile and its standees; used by the tutorial spotlight. */
+  deptScreenRect?(id: DeptId): DOMRect | null;
   resize(): void;
   dispose(): void;
 }
@@ -50,13 +51,6 @@ const FLOOR: Record<string, [FloorKind, string]> = {
   marketing: ['terrazzo', '#8d7d88'], finance: ['wood', '#6c4f3a'], operations: ['concrete', '#8a7f6b'], people: ['carpet', '#776a8a'],
 };
 const MAX_TOKENS = 32; // atlas is 8×4; cell 31 is the card backing
-
-/** Traits as this view knows them: permanent always, hidden ones when non-null (public, or private intel). */
-const traitTags = (e: EmployeeView, over: boolean): TraitTag[] => [
-  { label: TRAIT_LABEL[e.permanentTrait], weight: 1, state: 'public' },
-  ...([[e.hiddenTrait1, e.hiddenTrait1Public, 2], [e.hiddenTrait2, e.hiddenTrait2Public, 0]] as const).map(([t, pub, w]): TraitTag =>
-    t ? { label: TRAIT_LABEL[t], weight: w, state: pub || over ? 'public' : 'private' } : { label: '???', weight: w, state: 'unknown' }),
-];
 
 const slotPos = (slot: DepartmentView['slot']) => {
   if (slot === 'center') return new THREE.Vector3();
@@ -97,17 +91,12 @@ interface Tok {
   y: number; vy: number; lift: number; yaw: number; yawTarget: number; shake: number; halo: number; haloTarget: number;
   backCur: THREE.Color; backTarget: THREE.Color; dim: number; dimTarget: number;
   interactive: boolean; selected: boolean; promise: boolean; mole: boolean; rebel: boolean;
-  /** what the atlas cell was last painted with (trait band text + compact flag + font tick) */
-  cellKey: string; known: number;
 }
 
 export function createBoard(container: HTMLElement): Board {
   const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   const still = () => !!reduceMotion?.matches;
   const small = () => Math.min(container.clientWidth, container.clientHeight) < 600;
-  // Width check: unless a card is drawn wide enough on screen to read full trait rows (big screens,
-  // focused department), its trait band shows 3-letter pills ("AMB+1 ???+2 ???0"). Phones always get pills.
-  let compact = true;
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(dpr());
@@ -280,21 +269,18 @@ export function createBoard(container: HTMLElement): Board {
     tiles.clear(); toks.length = 0; tokById.clear(); deptPos.clear(); plates = [];
   };
 
-  /** Clears the atlas and paints the backing card; portrait cells are (re)painted by update() via cellKey. */
   const paintAtlas = () => {
     const c = atlasCanvas.getContext('2d')!;
     c.clearRect(0, 0, atlasCanvas.width, atlasCanvas.height);
-    for (const t of toks) t.cellKey = '';
+    if (lastView) {
+      for (const t of toks) {
+        const e = lastView.employees.find((x) => x.id === t.id);
+        if (e) drawPortrait(c, e, (t.idx % 8) * PORTRAIT_W, Math.floor(t.idx / 8) * PORTRAIT_H);
+      }
+    }
     // backing card (tinted per vertex with the owner colour)
     c.fillStyle = '#d6d6d6';
     c.beginPath(); c.roundRect(7 * PORTRAIT_W + 2, 3 * PORTRAIT_H + 2, PORTRAIT_W - 4, PORTRAIT_H - 4, 30); c.fill();
-    atlas.needsUpdate = true;
-  };
-  const paintCell = (t: Tok, e: EmployeeView, tags: TraitTag[]) => {
-    const c = atlasCanvas.getContext('2d')!;
-    const x = (t.idx % 8) * PORTRAIT_W, y = Math.floor(t.idx / 8) * PORTRAIT_H;
-    c.clearRect(x, y, PORTRAIT_W, PORTRAIT_H);
-    drawPortrait(c, e, x, y, tags, compact);
     atlas.needsUpdate = true;
   };
 
@@ -357,7 +343,7 @@ export function createBoard(container: HTMLElement): Board {
           loyalty: undefined, ringCur: new THREE.Color(LOYALTY_COLOR.Neutral), ringTarget: new THREE.Color(), ringPulse: 0,
           y: 0, vy: 0, lift: 0, yaw: 0, yawTarget: 0, shake: 0, halo: 0, haloTarget: 0,
           backCur: new THREE.Color(NEUTRAL_FRAME), backTarget: new THREE.Color(), dim: 1, dimTarget: 1,
-          interactive: true, selected: false, promise: false, mole: false, rebel: false, cellKey: '', known: -1,
+          interactive: true, selected: false, promise: false, mole: false, rebel: false,
         };
         if (toks.length < MAX_TOKENS - 1) { toks.push(t); tokById.set(eid, t); }
       });
@@ -429,20 +415,9 @@ export function createBoard(container: HTMLElement): Board {
     }
 
     const selectable = opts.selectable ? new Set(opts.selectable) : null;
-    const over = view.phase === 'gameOver';
     for (const e of view.employees) {
       const k = tokById.get(e.id);
       if (!k) continue;
-      // Trait band: repaint this token's atlas cell only when what the viewer knows changes.
-      const tags = traitTags(e, over);
-      const ck = JSON.stringify(tags) + compact + fontsTick;
-      if (ck !== k.cellKey) {
-        k.cellKey = ck;
-        paintCell(k, e, tags);
-        const known = tags.filter((x) => x.state !== 'unknown').length;
-        if (k.known >= 0 && known > k.known && animate) { k.vy = 2.2; k.ringPulse = 1; }
-        k.known = known;
-      }
       const dim = !!selectable && !selectable.has(e.id);
       k.interactive = !dim;
       k.selected = opts.selected === e.id;
@@ -505,11 +480,7 @@ export function createBoard(container: HTMLElement): Board {
     wantTarget.copy(baseTarget);
     wantDist = baseDist;
     if (p) { wantTarget.lerp(p, 0.65); wantDist *= 0.68; }
-    const cardPx = (CARD_W * container.clientHeight) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * wantDist);
-    const want = container.clientWidth < 700 || cardPx < (compact ? 130 : 110); // hysteresis
-    if (want !== compact) { compact = want; compactDirty = true; }
   };
-  let compactDirty = false;
 
   // ---- picking
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
@@ -615,7 +586,7 @@ export function createBoard(container: HTMLElement): Board {
       }
       // halo (Loyal), star (promise), badge (rebel), shimmer (mole)
       if (tok.halo > 0.01) {
-        v.set(0, CARD_H + 0.18 + (still() ? 0 : Math.sin(t * 2 + tok.idx) * 0.015), 0).applyMatrix4(cardM);
+        v.set(0, CARD_H + 0.05 + (still() ? 0 : Math.sin(t * 2 + tok.idx) * 0.015), 0).applyMatrix4(cardM);
         m4.compose(v, qx.identity(), s.setScalar(tok.halo));
         halos.setMatrixAt(nh++, m4);
       }
@@ -715,7 +686,6 @@ export function createBoard(container: HTMLElement): Board {
     raf = requestAnimationFrame(frame);
     const dt = Math.min((now - prev) / 1000, 0.1), t = now / 1000;
     prev = now;
-    if (compactDirty && lastView) { compactDirty = false; update(lastView, lastOpts); }
     if (moveEvt) { setHover(pick(moveEvt.clientX, moveEvt.clientY).emp ?? null); moveEvt = null; }
     // camera: slow settle on load, then a gentle glide for focusDept
     settle = Math.max(0, settle - dt / 2.2);
@@ -769,6 +739,17 @@ export function createBoard(container: HTMLElement): Board {
     onDeptClick: (cb) => void deptCbs.push(cb),
     onEmployeeHover: (cb) => void hoverCbs.push(cb),
     focusDept: (id) => { focused = id; applyFocus(); },
+    deptScreenRect: (id) => {
+      const p = deptPos.get(id);
+      if (!p) return null;
+      const r = container.getBoundingClientRect();
+      const xs: number[] = [], ys: number[] = [];
+      for (const [dx, dy, dz] of [[-R, 0, 0], [R, 0, 0], [0, 0, -R * 0.87], [0, 0, R * 0.87], [0, CARD_H + 0.3, 0]]) {
+        const v = new THREE.Vector3(p.x + dx, p.y + dy, p.z + dz).project(camera);
+        xs.push(r.left + ((v.x + 1) / 2) * r.width); ys.push(r.top + ((1 - v.y) / 2) * r.height);
+      }
+      return new DOMRect(Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    },
     resize,
     dispose: () => {
       cancelAnimationFrame(raf);

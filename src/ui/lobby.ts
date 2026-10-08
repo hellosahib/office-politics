@@ -5,10 +5,15 @@ import type { GameClient, Lobby, RoomHandle } from '../client';
 import { createLocalClient, createRoom, isOnlineAvailable, joinRoom } from '../net';
 import { esc } from './helpers';
 import { openHelp } from './howToPlay';
+import { muteButton, toggleMute } from './sound';
+import { requestTutorial, tutorialConfig, tutorialDone } from './tutorial';
 
 const NAME_KEY = 'officePolitics.name';
 const loadName = () => { try { return localStorage.getItem(NAME_KEY) ?? ''; } catch { return ''; } };
 const saveName = (n: string) => { try { localStorage.setItem(NAME_KEY, n); } catch { /* private mode */ } };
+/** Election length options. */
+const ROUNDS = [6, 8, 10] as const;
+type Rounds = typeof ROUNDS[number];
 const randomSeed = () => Math.floor(Math.random() * 1_000_000_000);
 
 const s = {
@@ -17,7 +22,7 @@ const s = {
   names: [...DEFAULT_PLAYER_NAMES],
   bots: [false, false, false, false],
   mode: 'Takeover' as GameMode,
-  rounds: 8 as 6 | 8 | 10,
+  rounds: 8 as Rounds,
   board: 'full' as 'full' | 'mini',
   seed: randomSeed(),
   myName: loadName(),
@@ -38,7 +43,7 @@ function configControls(): string {
     <label>Board <select data-field="board">${opt('full', s.board, 'Full: 7 depts')}${opt('mini', s.board, 'Mini: 4 depts')}</select></label>
     <label>Players <select data-field="count" ${s.board === 'mini' ? 'disabled' : ''}>${opt(3, playerCount())}${opt(4, playerCount())}</select></label>
     <label>Mode <select data-field="mode">${opt('Takeover', s.mode)}${opt('Election', s.mode)}</select></label>
-    ${s.mode === 'Election' ? `<label>Rounds <select data-field="rounds">${[6, 8, 10].map(r => opt(r, s.rounds)).join('')}</select></label>` : ''}
+    ${s.mode === 'Election' ? `<label>Rounds <select data-field="rounds">${ROUNDS.map(r => opt(r, s.rounds)).join('')}</select></label>` : ''}
   </div>`;
 }
 
@@ -95,7 +100,9 @@ function heroHtml(): string {
     <p class="tagline">Win the office. Lose your friends.</p>
     <p class="pitch">Seven departments. Twenty-eight employees with hidden motives. Charm them, pressure them, plant moles, and climb to CEO.</p>
     <div class="title-actions">
+      <button type="button" class="${tutorialDone() ? 'ghost' : 'primary tut-new'}" data-act="tutorial">${tutorialDone() ? 'Tutorial' : 'New here? Tutorial'}</button>
       <button type="button" class="ghost" data-act="help">How to play</button>
+      ${muteButton('mute', 'ghost')}
       <button type="button" class="ghost" data-act="theme" aria-label="Toggle light or dark theme">${theme() === 'light' ? 'Dark mode' : 'Light mode'}</button>
     </div>
   </section>`;
@@ -125,7 +132,8 @@ try { applyTheme(localStorage.getItem(THEME_KEY)); } catch { /* private mode */ 
 function buildConfig(players: GameConfig['players']): GameConfig {
   return {
     playerCount: playerCount(), mode: s.mode, seed: s.seed, players, board: s.board,
-    ...(s.mode === 'Election' ? { rounds: s.rounds } : {}),
+    // ponytail: cast until the engine's GameConfig.rounds becomes 6 | 8 | 10 (owner's change in flight).
+    ...(s.mode === 'Election' ? { rounds: s.rounds as NonNullable<GameConfig['rounds']> } : {}),
   };
 }
 
@@ -184,7 +192,15 @@ export function mountLobby(root: HTMLElement, onGame: (c: GameClient) => void): 
       s.busy = false; render();
     },
     'room-leave': () => leaveRoom(),
-    'help': () => openHelp(),
+    'help': () => openHelp(() => act.tutorial(el)),
+    'tutorial': () => {
+      let client: GameClient;
+      try { client = createLocalClient(tutorialConfig(s.names[0].trim())); }
+      catch (e) { s.error = String((e as Error)?.message ?? e); render(); return; }
+      requestTutorial();
+      dispose(); onGame(client);
+    },
+    'mute': () => { toggleMute(); render(); },
     'theme': () => {
       const next = theme() === 'light' ? 'dark' : 'light';
       applyTheme(next);
@@ -213,7 +229,7 @@ export function mountLobby(root: HTMLElement, onGame: (c: GameClient) => void): 
     switch (t.dataset.field) {
       case 'count': s.count = Number(t.value) as 3 | 4; break;
       case 'mode': s.mode = t.value as GameMode; break;
-      case 'rounds': s.rounds = Number(t.value) as 6 | 8 | 10; break;
+      case 'rounds': s.rounds = Number(t.value) as Rounds; break;
       case 'board': s.board = t.value as 'full' | 'mini'; break;
       case 'bot': s.bots[Number(t.dataset.i)] = t.checked; break;
       default: return;

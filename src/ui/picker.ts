@@ -25,7 +25,8 @@ function subjectHtml(view: GameView, e: EmployeeView, card: InfluenceCard | null
     <img class="pk-face" src="${portraitDataUrl(e)}" alt="" width="64" height="80">
     <div><div class="pk-subj-name">${esc(e.name)} ${empBadges(e, ui.canAct)}</div>
       <div class="muted small">${esc(e.role)} · ${esc(view.departments.find(d => d.id === e.deptId)?.name ?? '')}</div>
-      <div class="pk-subj-loy">${loyChip(e.loyalty)} <span class="muted small">side</span> ${pname(view, e.politicalOwner)}</div></div>
+      <div class="pk-subj-loy">${loyChip(e.loyalty)} <span class="muted small">side</span> ${pname(view, e.politicalOwner)}
+        <button type="button" class="link pk-more" data-act="inspect" data-id="${esc(e.id)}">Details</button></div></div>
     <div class="pk-subj-traits">${traitChips(e, ui.canAct, card)}</div>
   </div>`;
 }
@@ -51,7 +52,7 @@ function rowHtml(view: GameView, e: EmployeeView, act: string, selected: boolean
   const pc = e.politicalOwner !== null ? view.players[e.politicalOwner]?.color : null;
   return `<button type="button" class="pk-row${selected ? ' on' : ''}" data-act="${act}" data-id="${esc(e.id)}" data-hover="${esc(e.id)}" style="--pc:${esc(pc ?? 'var(--line-2)')}" aria-pressed="${selected}">
     <img class="pk-thumb" src="${portraitDataUrl(e)}" alt="" width="36" height="45">
-    <span class="pk-name"><b>${esc(e.name)}</b>${empBadges(e, ui.canAct)}<small>${esc(e.role)}</small></span>
+    <span class="pk-name"><b>${esc(e.name)}</b>${empBadges(e, ui.canAct)}<span class="pk-info" role="button" data-act="inspect" data-id="${esc(e.id)}" title="Open ${esc(e.name)}'s file" aria-label="Details">details</span><small>${esc(e.role)}</small></span>
     <span class="pk-meta">${loyChip(e.loyalty)}<span class="pk-owner">${pname(view, e.politicalOwner)}</span></span>
     <span class="pk-traits">${traitChips(e, ui.canAct, card, true)}</span>
   </button>`;
