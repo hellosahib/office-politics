@@ -17,7 +17,7 @@ const s = {
   names: [...DEFAULT_PLAYER_NAMES],
   bots: [false, false, false, false],
   mode: 'Takeover' as GameMode,
-  rounds: 10 as 8 | 10 | 12 | 15,
+  rounds: 8 as 6 | 8 | 10,
   board: 'full' as 'full' | 'mini',
   seed: randomSeed(),
   myName: loadName(),
@@ -38,7 +38,7 @@ function configControls(): string {
     <label>Board <select data-field="board">${opt('full', s.board, 'Full: 7 depts')}${opt('mini', s.board, 'Mini: 4 depts')}</select></label>
     <label>Players <select data-field="count" ${s.board === 'mini' ? 'disabled' : ''}>${opt(3, playerCount())}${opt(4, playerCount())}</select></label>
     <label>Mode <select data-field="mode">${opt('Takeover', s.mode)}${opt('Election', s.mode)}</select></label>
-    ${s.mode === 'Election' ? `<label>Rounds <select data-field="rounds">${[8, 10, 12, 15].map(r => opt(r, s.rounds)).join('')}</select></label>` : ''}
+    ${s.mode === 'Election' ? `<label>Rounds <select data-field="rounds">${[6, 8, 10].map(r => opt(r, s.rounds)).join('')}</select></label>` : ''}
   </div>`;
 }
 
@@ -213,7 +213,7 @@ export function mountLobby(root: HTMLElement, onGame: (c: GameClient) => void): 
     switch (t.dataset.field) {
       case 'count': s.count = Number(t.value) as 3 | 4; break;
       case 'mode': s.mode = t.value as GameMode; break;
-      case 'rounds': s.rounds = Number(t.value) as 8 | 10 | 12 | 15; break;
+      case 'rounds': s.rounds = Number(t.value) as 6 | 8 | 10; break;
       case 'board': s.board = t.value as 'full' | 'mini'; break;
       case 'bot': s.bots[Number(t.dataset.i)] = t.checked; break;
       default: return;

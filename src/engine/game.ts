@@ -141,6 +141,9 @@ function startTurn(s: S) {
   p.influenceBank = 0;
   s.turn = { number: (s.turn?.number ?? 0) + 1, drawnThisTurn: [], eventCardId: null };
   log(s, `Round ${s.round}: ${p.name}'s turn.`, 'public', 'turn');
+  // D44: Election (round-based) draws with replacement — any event may repeat; Takeover draws through the
+  // deck and only reshuffles the discard once the deck is exhausted.
+  if (s.config.mode === 'Election' && s.eventDiscard.length) { s.eventDeck.push(...s.eventDiscard); s.eventDiscard = []; shuffle(s.rng, s.eventDeck); }
   if (!s.eventDeck.length) { s.eventDeck = shuffle(s.rng, s.eventDiscard); s.eventDiscard = []; }
   const card = s.eventDeck.pop();
   if (!card) return afterEvent(s, false);

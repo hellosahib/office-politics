@@ -606,3 +606,17 @@ rival, and Rebels in a rival department are recovered through the rebellion rout
 Switch: `POSITIVE_CARDS_ALLOW_UNATTACHED_RIVALS` in `src/engine/rules.ts`.
 
 **Where.** `src/engine/rules.ts` (`checkPlay`), card label in `src/ui/helpers.ts`, How to Play.
+
+---
+
+## D44. Event deck draw policy and round options (owner, 2026-10-08)
+
+**Owner's words.** "For round-specific game mode, event cards should get repeated. Keep number of rounds to
+6, 8, 10. For Takedown mode, cards can get repeated but only when all cards have been exhausted."
+
+**Chosen (my reading).** Election mode: every turn's event is drawn at random from the whole event set, so
+the same event can come back any time (draw with replacement). Takeover mode: the shuffled deck is drawn
+through and the discard pile is reshuffled only when the deck is empty (as before). Election round options are
+now 6 / 8 / 10 (was 8 / 10 / 12 / 15); the mini prototype keeps 6.
+
+**Where.** `src/engine/game.ts` (`startTurn` event draw), `src/engine/types.ts` (`GameConfig.rounds`), lobby select.

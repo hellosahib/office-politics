@@ -979,3 +979,23 @@ describe('determinism (D2)', () => {
     expect(a.g.state.round).toBeGreaterThan(2);
   });
 });
+
+describe('D44 event draw policy', () => {
+  const cfg = (mode: 'Takeover' | 'Election'): GameConfig => ({ playerCount: 3, mode, rounds: 6, seed: 99, board: 'full', players: [{ name: 'A', isBot: false }, { name: 'B', isBot: false }, { name: 'C', isBot: false }] });
+  it('Election merges the discard back before every draw (cards may repeat); Takeover only when exhausted', () => {
+    const el = Game.create(cfg('Election'));
+    el.state.eventDiscard.push(el.state.eventDeck.pop()!, el.state.eventDeck.pop()!);
+    const deckBefore = el.state.eventDeck.length;
+    (el as any).state.pending = { kind: 'summary', player: 0 };
+    el.dispatch({ type: 'endTurn', player: 0 });
+    expect(el.state.eventDiscard.length).toBe(0); // discard merged back before the draw
+    expect(el.state.eventDeck.length).toBe(deckBefore + 2 - 1); // merged, then one drawn
+    const tk = Game.create(cfg('Takeover'));
+    tk.state.eventDiscard.push(tk.state.eventDeck.pop()!, tk.state.eventDeck.pop()!);
+    const tkBefore = tk.state.eventDeck.length;
+    (tk as any).state.pending = { kind: 'summary', player: 0 };
+    tk.dispatch({ type: 'endTurn', player: 0 });
+    expect(tk.state.eventDiscard.length).toBe(2); // untouched until the deck runs out
+    expect(tk.state.eventDeck.length).toBe(tkBefore - 1);
+  });
+});

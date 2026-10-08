@@ -455,7 +455,8 @@ export interface GameConfig {
   playerCount: 3 | 4;
   mode: GameMode;
   /** Election only. */
-  rounds?: 8 | 10 | 12 | 15;
+  /** Election only (D44: 6 / 8 / 10). */
+  rounds?: 6 | 8 | 10;
   seed: number;
   players: { name: string; isBot: boolean }[];
   /** 'full' = 7 depts/28 employees. 'mini' = §82 prototype (4 depts, 16 employees, 3 players, 6 rounds, no agendas, no CEO). */
