@@ -3,6 +3,7 @@
 import type { EmployeeId, GameView, InfluenceCard, PlayerView } from '../engine/types';
 import { MAX_RESERVE } from '../engine/types';
 import type { GameClient } from '../client';
+import { play as sfx } from './sound';
 import { cardHtml, esc, isMine, meterHtml, motionOK, noTargetsText, pname, ui, type Handlers } from './helpers';
 
 /** Is it my play phase? */
@@ -86,6 +87,7 @@ export const handActions: Handlers = {
     if (!ui.selectedCard || !ui.selectedTarget) return;
     const src = document.querySelector<HTMLElement>('.hand .card.selected');
     if (src && motionOK()) flyCard(src);
+    sfx('play');
     ui.flown.add(ui.selectedCard);
     void c.act({ type: 'playCard', player: c.client.me!, cardId: ui.selectedCard, targetId: ui.selectedTarget });
   },

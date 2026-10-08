@@ -9,6 +9,7 @@ import { TRAIT_LABEL } from '../engine/types';
 import type { GameClient } from '../client';
 import { portraitDataUrl } from '../board/portrait';
 import { esc, loyChip, motionOK, ui, type Handlers } from './helpers';
+import { play as sfx } from './sound';
 
 // ---------------------------------------------------------------- intro ("Meet your team")
 const INTRO_KEY = 'op:introSeen';
@@ -114,6 +115,7 @@ export function createCinema(root: HTMLElement, render: () => void): Cinema {
       const g = div('cback influence flying');
       Object.assign(g.style, { left: `${from.left + from.width / 2 - r.width / 2}px`, top: `${from.top + from.height / 2 - r.height / 2}px`, width: `${r.width}px`, height: `${r.height}px` });
       overlay.append(g);
+      window.setTimeout(() => { if (!skipping) sfx('deal'); }, i * 170);
       const dx = r.left - (from.left + from.width / 2 - r.width / 2), dy = r.top - (from.top + from.height / 2 - r.height / 2);
       await play(g, [{ transform: 'translate(0,0) rotate(-10deg) scale(.55)' }, { transform: `translate(${dx}px,${dy}px) rotate(0) scale(1)` }],
         { duration: 430, delay: i * 170, easing: 'cubic-bezier(.2,.8,.25,1)' });
@@ -139,6 +141,7 @@ export function createCinema(root: HTMLElement, render: () => void): Cinema {
     const dy = Math.max(70, innerHeight * 0.18) + H / 2 - (from.top + from.height / 2);
     await play(f, [{ transform: 'translate(0,0) scale(.8)' }, { transform: `translate(0,${dy}px) scale(1.12)` }], { duration: 420, easing: 'cubic-bezier(.2,.8,.25,1)' });
     deck.remove();
+    if (!skipping) sfx('flip');
     await play(f.firstElementChild!, [{ transform: 'rotateY(180deg)' }, { transform: 'rotateY(0deg)' }], { duration: 460, easing: 'cubic-bezier(.3,.7,.3,1)' });
     await play(f, [{ opacity: 1, transform: `translate(0,${dy}px) scale(1.12)` }, { opacity: 1, offset: 0.6 }, { opacity: 0, transform: `translate(0,${dy}px) scale(1.3)` }], { duration: 520 });
     f.remove();

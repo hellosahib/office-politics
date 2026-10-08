@@ -3,6 +3,7 @@ import type { GameView, Pending, TraitPole } from '../engine/types';
 import { MAX_RESERVE, RANK_LABEL, TRAIT_LABEL } from '../engine/types';
 import type { GameClient } from '../client';
 import { portraitDataUrl } from '../board/portrait';
+import { muteButton } from './sound';
 import { deptName, empName, esc, glyph, isMine, meterHtml, pendingPlayer, pname, ui, weightLabel, type Handlers } from './helpers';
 
 const PHASE_LABEL: Record<Pending['kind'], string> = {
@@ -31,6 +32,7 @@ export function topbarHtml(view: GameView, client: GameClient): string {
     ${waiting}
     <span class="spacer"></span>
     ${me && ui.canAct ? `<span class="tb-you hide-sm">You are ${pname(view, me.id)}</span>` : ''}
+    ${muteButton()}
     <button type="button" class="icon-btn tb-help" data-act="help" title="How to play" aria-label="How to play">${glyph(I.help)}</button>
     <button type="button" class="icon-btn tb-toggle" data-act="toggle-log" aria-pressed="${ui.showLog}" aria-label="Political log">${glyph(I.log)}</button>
     <button type="button" class="icon-btn" data-act="leave" title="Leave game" aria-label="Leave game">${glyph(I.exit)}</button>`;

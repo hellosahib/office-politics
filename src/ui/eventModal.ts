@@ -6,6 +6,7 @@ import type { GameClient } from '../client';
 import { portraitDataUrl } from '../board/portrait';
 import { deptName, empBadges, esc, isMine, leadName, loyChip, pendingPlayer, pname, traitChips, ui, weightLabel, type Handlers } from './helpers';
 import { eventTargetTitle } from './picker';
+import { play as sfx } from './sound';
 
 /** Departments the event touches; Global (or unknown) → the viewer's own departments. */
 function affectedDepts(view: GameView, client: GameClient): DeptId[] {
@@ -120,7 +121,7 @@ export function eventHtml(view: GameView, client: GameClient): string {
 }
 
 export const eventActions: Handlers = {
-  'event-choice': (el, c) => void c.act({ type: 'eventChoice', player: c.client.me!, optionId: el.dataset.id as 'A' | 'B' }),
+  'event-choice': (el, c) => { sfx('vote'); void c.act({ type: 'eventChoice', player: c.client.me!, optionId: el.dataset.id as 'A' | 'B' }); },
   'event-target': (el, c) => void c.act({ type: 'eventTarget', player: c.client.me!, targetId: el.dataset.id! }),
   'reveal': (el, c) => void c.act({ type: 'revealChoice', player: c.client.me!, mode: el.dataset.mode as 'public' | 'private' }),
   'event-min': (_el, c) => { ui.eventMin = true; c.render(); },

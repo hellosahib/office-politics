@@ -9,6 +9,7 @@ import type { GameClient } from '../client';
 import { portraitDataUrl } from '../board/portrait';
 import { deptName, esc, loyChip, motionOK, pname, ui, type Handlers } from './helpers';
 import { confetti } from './endGame';
+import { play as sfx } from './sound';
 
 // ---------------------------------------------------------------- card banner
 type Band = 'Failure' | 'Standard Success' | 'Strong Success' | 'Blocked';
@@ -62,6 +63,7 @@ function showBanner(root: HTMLElement, view: GameView, r: CardResult): void {
     <div class="cb-status"><span class="cb-band">${esc(r.band === 'Blocked' ? 'Failure' : r.band)}</span> Status ${loyChip(r.from)}<span class="arr">→</span>${loyChip(r.to)}</div>
     ${r.why ? `<details class="cb-why"><summary>Why?</summary><span class="num">${esc(r.why)}</span></details>` : ''}`;
   root.append(b);
+  sfx(r.band === 'Strong Success' ? 'strong' : ok ? 'success' : 'fail');
   let timer = window.setTimeout(() => close(), 3200);
   const close = () => { clearTimeout(timer); b.classList.add('out'); window.setTimeout(() => b.remove(), motionOK() ? 260 : 0); };
   b.addEventListener('click', e => {
@@ -117,6 +119,7 @@ function showRevealBanner(root: HTMLElement, html: string, priv: boolean): void 
   b.setAttribute('role', 'status');
   b.innerHTML = html;
   root.append(b);
+  sfx('pop');
   const close = () => { b.classList.add('out'); window.setTimeout(() => b.remove(), motionOK() ? 260 : 0); };
   const t = window.setTimeout(close, 3600);
   b.addEventListener('click', () => { clearTimeout(t); close(); });
@@ -225,6 +228,7 @@ export function createResults(root: HTMLElement, rerender: () => void = () => {}
   let autoClose: ReturnType<typeof setTimeout> | undefined;
   const openOutcome = (r: EventResult, view: GameView) => {
     open = r; ui.eventResultOpen = true;
+    sfx('sting');
     clearTimeout(autoClose);
     if (view.players[view.currentPlayer]?.isBot) {
       autoClose = setTimeout(() => { if (open === r && ui.eventResultOpen) { ui.eventResultOpen = false; rerender(); } }, BOT_OUTCOME_MS);

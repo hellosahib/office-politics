@@ -17,12 +17,14 @@ import { accusationActions, accusationHtml } from './accusation';
 import { curtainActions, curtainHtml } from './curtain';
 import { confetti, endGameActions, endGameHtml } from './endGame';
 import { openHelp } from './howToPlay';
+import { play as sfx, toggleMute } from './sound';
 
 const handlers: Handlers = {
   ...handActions, ...summaryActions, ...eventActions, ...employeeActions, ...dashboardActions,
   ...logActions, ...accusationActions, ...curtainActions, ...endGameActions, ...pickerActions, ...cinemaActions, ...resultActions,
   'toast-close': (_el, c) => { ui.error = null; c.render(); },
   'help': () => openHelp(),
+  'mute': (_el, c) => { toggleMute(); c.render(); },
 };
 
 /** Mounts the game into `root`. Returns a dispose function. `onExit` is called by Leave / Back to lobby. */
@@ -57,6 +59,18 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
   let disposed = false;
   let toastTimer = 0;
   let firstPaint = true;
+  let logSeen = -1, turnSeen = '';
+  /** Sounds for public log moments (capture, rebel) and a soft bell when a human's turn starts. */
+  function moments(view: GameView): void {
+    if (logSeen >= 0) for (const l of view.log.slice(logSeen)) {
+      if (l.visibility !== 'public') continue;
+      if (l.tag === 'capture') sfx('capture'); else if (l.tag === 'rebel') sfx('rebel');
+    }
+    logSeen = view.log.length;
+    const t = `${view.round}:${view.currentPlayer}`;
+    if (turnSeen && t !== turnSeen && view.phase !== 'gameOver' && !view.players[view.currentPlayer]?.isBot) sfx('turn');
+    turnSeen = t;
+  }
   const cinema = createCinema(el, () => render());
   const results = createResults(el, () => render());
 
@@ -96,6 +110,7 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
     const evId = view.activeEvent?.card.id ?? '';
     if (evId !== lastEvent) { lastEvent = evId; ui.eventMin = false; }
 
+    moments(view);
     const curtain = curtainHtml(view, client); // also sets ui.canAct
     setHtml(slot('curtain'), curtain);
     if (curtain) {
@@ -121,7 +136,7 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
     // Entrance animations run once per new element key; the log backlog on mount stays still.
     if (firstPaint) { markEntered(slot('log')); firstPaint = false; }
     const fresh = runEnter(el);
-    if (fresh.some(k => k.startsWith('endgame'))) confetti(el, view.players.map(p => p.color));
+    if (fresh.some(k => k.startsWith('endgame'))) { confetti(el, view.players.map(p => p.color)); sfx('end'); }
     tweenMeters(el);
     el.classList.toggle('show-dash', ui.showDash);
     el.classList.toggle('show-log', ui.showLog);
