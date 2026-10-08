@@ -265,13 +265,19 @@ const nameRe = (name: string) => new RegExp(`\\b${reEsc(name)}\\b(?! [A-Z])`, 'g
 /** Does a log line mention this player? */
 export const mentions = (text: string, name: string) => nameRe(name).test(text);
 
-/** Colour every player name in a plain log line; department names become dept-filter buttons. */
+/** Colour every player name in a plain log line; department names become dept-filter buttons, employee names open their file. */
 export function colourNames(view: GameView, text: string): string {
   let out = esc(text);
   // ponytail: regex per name per line; fine for a few hundred log lines.
   for (const d of view.departments) {
     out = out.replace(new RegExp(`\\b${reEsc(esc(d.name))}(?![\\w-])`, 'g'),
       `<button type="button" class="dname" data-act="log-dept" data-id="${esc(d.id)}">${esc(d.name)}</button>`);
+  }
+  // Employee full names open their details card.
+  for (const e of view.employees) {
+    if (!out.includes(esc(e.name))) continue;
+    out = out.replace(new RegExp(`\\b${reEsc(esc(e.name))}\\b`, 'g'),
+      `<button type="button" class="ename" data-act="inspect" data-id="${esc(e.id)}">${esc(e.name)}</button>`);
   }
   for (const p of view.players) {
     out = out.replace(nameRe(esc(p.name)), `<span class="pname" style="--pc:${esc(p.color)}">${esc(p.name)}</span>`);

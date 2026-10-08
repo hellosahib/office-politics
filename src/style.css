@@ -366,12 +366,18 @@ button.card:hover:not([aria-disabled="true"]) { --lift: -8px; box-shadow: 0 24px
 .range-lbl { position: absolute; top: 19px; font: 600 9.5px/1 var(--font-mono); color: var(--ink-3); transform: translateX(-50%); }
 
 /* ---------------------------------------------------------------- employee dossier */
-.emp-panel {
-  position: absolute; z-index: 8; top: calc(var(--topbar-h) + 12px); left: calc(var(--side-w) + 22px);
-  width: 340px; max-height: calc(100% - var(--topbar-h) - var(--hand-h) - 34px); overflow: auto; padding-top: var(--s5);
+.emp-backdrop { z-index: 38; }
+.emp-card {
+  position: relative; width: min(440px, 100%); max-height: calc(100dvh - 32px); overflow: auto; padding: var(--s6) var(--s5) var(--s5);
+  box-shadow: var(--shadow), var(--inner), inset 0 3px 0 var(--pc);
 }
+.emp-card .trait-row .w.num { margin-left: 4px; }
+.owner-chip { display: inline-flex; align-items: center; gap: 6px; font: 650 var(--fs-sm)/1 var(--font-ui); padding: 4px 9px; border-radius: var(--r-pill); color: var(--pc); background: color-mix(in srgb, var(--pc) 14%, transparent); border: 1px solid color-mix(in srgb, var(--pc) 45%, transparent); }
+.owner-chip::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--pc); box-shadow: 0 0 8px var(--pc); }
+.pk-info { margin-left: 4px; font: 700 10px/1 var(--font-mono); color: var(--ink-3); border: 1px solid var(--line-2); border-radius: var(--r-pill); padding: 2px 6px; cursor: pointer; }
+.pk-info:hover { color: var(--brass); border-color: var(--brass); }
 .dossier-tab { position: absolute; top: 0; left: var(--s4); font: 700 9.5px/1 var(--font-mono); letter-spacing: .18em; text-transform: uppercase; color: var(--brass-ink); background: var(--brass); padding: 5px 9px 6px; border-radius: 0 0 6px 6px; }
-.emp-panel .close { position: absolute; top: 8px; right: 8px; font-size: 15px; color: var(--ink-3); }
+.emp-card .close { position: absolute; top: 8px; right: 8px; font-size: 15px; color: var(--ink-3); }
 .dossier-head { display: flex; gap: var(--s3); align-items: flex-start; }
 .portrait { width: 96px; height: 120px; border-radius: 12px; flex: none; box-shadow: 0 12px 30px -12px rgba(0, 0, 0, .9); background: var(--surface); }
 .dossier-id h3 { margin: 2px 0 4px; font-size: var(--fs-xl); }
@@ -699,7 +705,6 @@ button.card:hover:not([aria-disabled="true"]) { --lift: -8px; box-shadow: 0 24px
   .reserve { border-left: none; padding-left: 0; }
   .card { width: 150px; min-height: 220px; }
   .give { width: 150px; }
-  .emp-panel { left: 6px; right: 6px; width: auto; z-index: 16; top: calc(var(--topbar-h) + 4px); max-height: calc(100% - var(--topbar-h) - var(--hand-h) - 14px); }
   .event-panel { top: calc(var(--topbar-h) + 6px); }
   .ev-body { padding: var(--s3) var(--s4) var(--s4); }
   .ev-title { font-size: var(--fs-xl); }
@@ -736,9 +741,9 @@ button.card:hover:not([aria-disabled="true"]) { --lift: -8px; box-shadow: 0 24px
 .stat-infl.idle .of, .hand-infl.idle .of { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; }
 .pl-stats .idle b { color: var(--ink-3); }
 .pl-stats .idle { opacity: .7; }
-.dname { all: unset; cursor: pointer; font-weight: 650; color: var(--ink); border-bottom: 1px dotted var(--ink-3); }
-.dname:hover { color: var(--brass); border-color: var(--brass); }
-.dname:focus-visible { outline: 2px solid var(--brass); }
+.dname, .ename { all: unset; cursor: pointer; font-weight: 650; color: var(--ink); border-bottom: 1px dotted var(--ink-3); }
+.dname:hover, .ename:hover { color: var(--brass); border-color: var(--brass); }
+.dname:focus-visible, .ename:focus-visible { outline: 2px solid var(--brass); }
 .row-end { display: inline-flex; gap: var(--s2); margin-left: auto; }
 
 /* ---------------------------------------------------------------- target picker (centred modal) */
@@ -789,7 +794,6 @@ button.card:hover:not([aria-disabled="true"]) { --lift: -8px; box-shadow: 0 24px
 .ts-name { font-size: 11.5px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .ts-emp .tchips { flex-direction: column; align-items: center; gap: 2px; max-width: 100%; }
 .ts-emp .tchip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-.emp-panel { z-index: 11; }
 
 /* ---------------------------------------------------------------- end-of-turn report */
 .rp-body { max-height: min(58vh, 560px); overflow: auto; margin-right: -8px; padding-right: 8px; }
@@ -921,7 +925,9 @@ button.card:hover:not([aria-disabled="true"]) { --lift: -8px; box-shadow: 0 24px
   .picker .sheet-foot { padding: var(--s3) var(--s4) calc(var(--s3) + env(safe-area-inset-bottom)); }
   .report { display: flex; flex-direction: column; }
   .rp-body { max-height: none; flex: 1; }
-  .modal-backdrop.intro-backdrop, .modal-backdrop.eo-backdrop { padding: 0; }
+  .modal-backdrop.intro-backdrop, .modal-backdrop.eo-backdrop, .modal-backdrop.emp-backdrop { padding: 0; }
+  .emp-card { width: 100%; height: 100%; max-height: none; border-radius: 0; padding: var(--s6) var(--s4) calc(var(--s4) + env(safe-area-inset-bottom)); }
+  .emp-card[class*="anim-"] { animation-name: sheet-up !important; }
   .intro, .event-outcome { border-radius: 0; height: 100%; padding: var(--s4); }
   .intro h2 { font-size: var(--fs-2xl); }
   .intro-lead { font-size: var(--fs-md); }

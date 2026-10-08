@@ -157,15 +157,17 @@ export function mountGame(root: HTMLElement, client: GameClient, onExit: () => v
   });
 
   const onClick = (e: MouseEvent) => {
+    if ((e.target as HTMLElement).classList.contains('emp-backdrop')) { ui.inspect = null; render(); return; }
     const t = (e.target as HTMLElement).closest<HTMLElement>('[data-act]');
     if (!t || (t as HTMLButtonElement).disabled) return;
     handlers[t.dataset.act!]?.(t, ctx);
   };
   const onKey = (e: KeyboardEvent) => {
     if (e.key !== 'Escape') return;
-    if (ui.selectedTarget) ui.selectedTarget = null;
+    // The details card sits on top of everything: close it first, leave the picker/event as they were.
+    if (ui.inspect) ui.inspect = null;
+    else if (ui.selectedTarget) ui.selectedTarget = null;
     else if (ui.selectedCard) ui.selectedCard = null;
-    else ui.inspect = null;
     render();
   };
   const onResize = () => board.resize();

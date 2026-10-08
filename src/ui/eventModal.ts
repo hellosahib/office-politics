@@ -125,5 +125,4 @@ export const eventActions: Handlers = {
   'reveal': (el, c) => void c.act({ type: 'revealChoice', player: c.client.me!, mode: el.dataset.mode as 'public' | 'private' }),
   'event-min': (_el, c) => { ui.eventMin = true; c.render(); },
   'event-max': (_el, c) => { ui.eventMin = false; c.render(); },
-  'inspect': (el, c) => { ui.inspect = el.dataset.id!; c.render(); },
 };
