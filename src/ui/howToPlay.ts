@@ -14,7 +14,7 @@ const SECTIONS: [id: string, title: string, html: string][] = [
     <h4>Takeover mode</h4>
     <p>The moment you control <b>N + 2 departments</b> you are CEO and the game ends: <b>5</b> in a 3-player game, <b>6</b> in a 4-player game. Being the last player standing also wins.</p>
     <h4>Election mode</h4>
-    <p>Play a fixed <b>8, 10, 12 or 15 rounds</b>. Then every secret is revealed and the highest score becomes CEO. Each player also gets a <b>Secret Agenda</b>.</p>
+    <p>Play a fixed <b>6, 8 or 10 rounds</b> (8 by default). Then every secret is revealed and the highest score becomes CEO. Each player also gets a <b>Secret Agenda</b>.</p>
     <table class="ht-t"><tr><th>Achievement</th><th>Points</th></tr>
       <tr><td>Each controlled department</td><td>+10</td></tr>
       <tr><td>Each ${L} employee aligned to you</td><td>+2</td></tr>
