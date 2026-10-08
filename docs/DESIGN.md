@@ -67,8 +67,16 @@ Other rules from this round:
 
 - **Influence when it isn't your turn** is shown as the per-turn maximum in muted ink ("not your turn" / "next turn"), never as 0.
 - **Log** renders engine narrative only (lines tagged `explanation` are never shown); department names are dotted buttons that filter the board/log; the `mine` chip keeps lines that mention you or are private to you.
-- **Phones (≤ 760 px):** every `.float-center` modal, the intro and the event outcome become full-screen sheets (`sheet-up` entrance); the picker puts the forecast above the list.
-- **Layering:** event panel 9 < dossier 11 < float-center modals 20–25 < event outcome 32 < card banner 42 < intro 45 < cinema 50 < curtain 100.
+- **Phones (≤ 760 px):** every `.float-center` modal, the intro, the event outcome and the details card become full-screen sheets (`sheet-up` entrance); the picker puts the forecast above the list.
+- **Layering:** event panel 9 < float-center modals 20–25 < event outcome 32 < details card 38 < card banner 42 < intro 45 < cinema 50 < tutorial coach 90 < curtain 100 < How to play 200.
+
+## Added in the fourth round
+
+| Component | File | Notes |
+|---|---|---|
+| Employee details card | `src/ui/employeePanel.ts`, `.emp-backdrop` / `.emp-card` | Replaces the old side panel. Opens (`ui.inspect`) from a board token, the event team strip, a name in the log (`.ename`, via `colourNames`), a picker row's `details` pill or the forecast's Details link, and Your intel. Centred personnel file: portrait, name, role, department + lead, §76 visual line, loyalty ladder, political side (`.owner-chip`), rebel inclination (private), promise, mole panel (only when visible), traits as stamps: Known (+1); hidden ones with `public`, `🔒 only you know` or a dashed `??? (+2)` / `??? (0)`; recent public log lines. Own slot above every modal, so the event / picker underneath are untouched and reappear on close (✕, Escape first, backdrop). Full-screen sheet on phones. |
+| Sound | `src/ui/sound.ts` | Web Audio synthesis only (oscillators + a band-passed noise buffer), master gain 0.25, each cue ≤ 0.6 s (fanfares ≤ 1.5 s). Cues: click (every button), deal (per dealt card), play (card swish), success / strong / fail (card banner band), flip (event card), vote (option / vote), sting (event outcome), capture / rebel (public log tags), turn (a human's turn starts), end (game over), pop (reveal banner). AudioContext is created / resumed on the first pointer or key gesture; nothing plays before. ~4 cues/s cap (clicks exempt) so bot bursts stay calm. 🔊 / 🔇 toggle in the top bar and on the title screen, `localStorage['op:muted']`, default on. Dev builds log `[sound] <cue>` to the console. |
+| Tutorial | `src/ui/tutorial.ts`, `.coach` / `.coach-spot` / `.coach-card` | Real local game (full board, you + Morgan + Riley bots, `TUTORIAL_SEED = 4`: you move first, Local "Client Complaint" with an employee pick, an affordable positive card). 18 steps; each spotlights one element (click-through cut-out made with a 9999px box-shadow) and advances on the game state (pending kind, `actionCount`, `ui.inspect` / `ui.selectedCard` / `ui.eventResultOpen`) or Next. Hidden during the cinema and the curtain. Card goes beside the target, else top (bottom on request). Started from the title screen (`New here? Tutorial` until `localStorage['op:tutorialDone']`) or How to play. Board exposes optional `deptScreenRect(id)` for the spotlight. `src/ui/tutorial.test.ts` fails if an engine change breaks the seed. |
 
 ## Board performance budget
 
