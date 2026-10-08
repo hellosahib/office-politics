@@ -108,6 +108,7 @@ button.link:hover:not(:disabled) { text-decoration: underline; text-underline-of
 .icon-btn { width: 36px; height: 36px; padding: 0; display: inline-grid; place-items: center; border-radius: var(--r-ctl); background: transparent; border-color: transparent; box-shadow: none; color: var(--ink-2); }
 .icon-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
 .icon-btn[aria-pressed="true"] { color: var(--brass); background: var(--brass-soft); }
+.mute-btn { font-size: 17px; line-height: 1; }
 .glyph { width: 20px; height: 20px; }
 .chip { border-radius: var(--r-pill); padding: 4px 11px; font-size: var(--fs-sm); margin: 2px; background: var(--surface); box-shadow: none; }
 .chip.on { background: var(--brass-soft); border-color: var(--brass); color: var(--ink); }
@@ -161,7 +162,7 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus { border-colo
 }
 .stamp.sm { font-size: 10.5px; padding: 3px 6px; }
 .stamp .w { opacity: .75; }
-.redacted { font-family: var(--font-mono); letter-spacing: -1px; color: transparent; background: repeating-linear-gradient(90deg, var(--ink-2) 0 13px, transparent 13px 15px); border-radius: 2px; line-height: 1; padding: 3px 0; user-select: none; opacity: .55; }
+.stamp.redact { color: var(--ink-3); border: 2px dashed var(--line-2); transform: none; }
 
 /* ---------------------------------------------------------------- panels */
 .panel {
@@ -371,7 +372,6 @@ button.card:hover:not([aria-disabled="true"]) { --lift: -8px; box-shadow: 0 24px
   position: relative; width: min(440px, 100%); max-height: calc(100dvh - 32px); overflow: auto; padding: var(--s6) var(--s5) var(--s5);
   box-shadow: var(--shadow), var(--inner), inset 0 3px 0 var(--pc);
 }
-.emp-card .trait-row .w.num { margin-left: 4px; }
 .owner-chip { display: inline-flex; align-items: center; gap: 6px; font: 650 var(--fs-sm)/1 var(--font-ui); padding: 4px 9px; border-radius: var(--r-pill); color: var(--pc); background: color-mix(in srgb, var(--pc) 14%, transparent); border: 1px solid color-mix(in srgb, var(--pc) 45%, transparent); }
 .owner-chip::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--pc); box-shadow: 0 0 8px var(--pc); }
 .pk-info { margin-left: 4px; font: 700 10px/1 var(--font-mono); color: var(--ink-3); border: 1px solid var(--line-2); border-radius: var(--r-pill); padding: 2px 6px; cursor: pointer; }

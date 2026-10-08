@@ -6,7 +6,7 @@ import type { GameConfig, GameView } from '../engine/types';
 import { esc, ui, type Ctx } from './helpers';
 
 /** Seat 0 moves first; the first event is the Local "Client Complaint" (both options pick an employee)
- *  and the first hand has an affordable positive card. Found by running the engine over seeds 1…n. */
+ *  and the first hand has an affordable positive card. tutorial.test.ts checks it (and says how to find a new one). */
 export const TUTORIAL_SEED = 4;
 const DONE_KEY = 'op:tutorialDone';
 
@@ -37,6 +37,8 @@ interface Step {
   back?: (v: GameView) => boolean;
   /** Show a Next button. */
   next?: boolean;
+  /** Where the card goes when the target leaves no room beside it (default: top for big targets). */
+  at?: 'top' | 'bottom';
   enter?: (c: Ctx) => void;
   leave?: (c: Ctx) => void;
 }
@@ -74,7 +76,8 @@ const STEPS: Step[] = [
   {
     target: () => '.emp-card',
     title: 'The personnel file',
-    body: () => `<p><b>Traits</b> decide how people react to your cards. Everyone has three: one <b>known</b> (+1), one hidden worth <b>+2</b> and one hidden worth <b>0</b>. Striped bars are traits you haven't learned yet.</p>
+    at: 'bottom',
+    body: () => `<p><b>Traits</b> decide how people react to your cards. Everyone has three: one <b>known</b> (+1), one hidden worth <b>+2</b> and one hidden worth <b>0</b>. <b>???</b> marks a trait you haven't learned yet.</p>
       <p><b>Loyalty</b> runs Rebel → Skeptical → Neutral → Favorable → Loyal. Someone is on your side (<b>political side</b>) while Favorable or Loyal to you.</p>`,
     next: true,
     leave: c => { ui.inspect = null; c.render(); },
@@ -162,7 +165,11 @@ const STEPS: Step[] = [
     done: v => !myTurn(v) || v.pending.kind !== 'summary',
   },
   {
-    target: () => window.innerWidth <= 760 ? null : '.log',
+    target: c => {
+      const p = c.view.pending;
+      if (p.kind === 'eventChoice' && p.player === 0) return '.event-panel .event-options'; // your vote: keep it clear
+      return window.innerWidth <= 760 ? '.topbar' : '.log';
+    },
     title: 'Watching the bots',
     body: v => `<p>Morgan and Riley take their turns now. Their events, card banners and outcomes play out on your screen, and the <b>Political log</b> keeps the history. Click any name in it to open a file.</p>
       <p>On a <b>Global</b> event everyone votes secretly, you included${v.pending.kind === 'eventChoice' && v.pending.player === 0 ? ': <b>cast your vote now</b>' : ''}.</p>`,
@@ -225,10 +232,10 @@ export function startTutorial(root: HTMLElement, c: Ctx): () => void {
         <div class="coach-foot"><button type="button" class="link" data-coach="skip">Skip tutorial</button>
         ${s.next ? `<button type="button" class="primary" data-coach="next">${i === STEPS.length - 1 ? 'Finish' : 'Next'}</button>` : '<span class="coach-wait">Your move…</span>'}</div>`;
     }
-    place(s.target?.(c) ?? null);
+    place(s.target?.(c) ?? null, s.at);
   }
 
-  function place(t: Element | DOMRect | string | null): void {
+  function place(t: Element | DOMRect | string | null, at?: 'top' | 'bottom'): void {
     const target = typeof t === 'string' ? document.querySelector(t) : t;
     const r = target instanceof Element ? target.getBoundingClientRect() : target;
     const W = innerWidth, H = innerHeight, cr = card.getBoundingClientRect(), pad = 8, gap = 14;
@@ -248,7 +255,8 @@ export function startTutorial(root: HTMLElement, c: Ctx): () => void {
     else if (r.top - pad - gap >= cr.height) top = r.top - pad - gap - cr.height;
     else if (W - r.right - pad - gap >= cr.width) { left = r.right + pad + gap; top = Math.min(Math.max(8, r.top), H - cr.height - 8); }
     else if (r.left - pad - gap >= cr.width) { left = r.left - pad - gap - cr.width; top = Math.min(Math.max(8, r.top), H - cr.height - 8); }
-    else top = r.top + r.height / 2 > H / 2 ? 8 : H - cr.height - 8;
+    // No room: big targets (phone sheets keep their buttons at the bottom) get the card on top.
+    else top = (at ?? (r.height > H * 0.6 || r.top + r.height / 2 > H / 2 ? 'top' : 'bottom')) === 'top' ? 8 : H - cr.height - 8;
     card.style.left = `${left}px`; card.style.top = `${top}px`;
   }
 

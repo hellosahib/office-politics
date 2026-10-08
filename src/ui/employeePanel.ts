@@ -6,10 +6,10 @@ import { LOYALTY_LADDER, TRAIT_LABEL } from '../engine/types';
 import { portraitDataUrl } from '../board/portrait';
 import { colourNames, deptName, esc, leadName, loyChip, pname, ui, weightLabel, type Handlers } from './helpers';
 
-/** Known trait = stamped chip (+ public / 🔒 only-you-know tag); unknown = redacted bar with its weight slot. */
+/** Known trait = stamped chip (+ public / 🔒 only-you-know tag); unknown = redacted "???" stamp with its weight slot. */
 const trait = (label: string, t: TraitPole | null, w: number, isPublic: boolean | null) => `<div class="trait-row"><span class="trait-k">${label}</span>${t
   ? `<span class="stamp">${TRAIT_LABEL[t]} <span class="w">${weightLabel(w)}</span></span>${isPublic === null ? '' : isPublic ? ' <span class="tag">public</span>' : ' <span class="tag-private">🔒 only you know</span>'}`
-  : `<span class="redacted" title="Unknown trait (???)" aria-label="Unknown trait">???????</span><span class="w muted num">${weightLabel(w)}</span>`}</div>`;
+  : `<span class="stamp redact" title="Unknown trait">??? <span class="w">${weightLabel(w)}</span></span>`}</div>`;
 
 export function employeeHtml(view: GameView): string {
   const e = view.employees.find(x => x.id === ui.inspect);

@@ -133,7 +133,7 @@ const SECTIONS: [id: string, title: string, html: string][] = [
       <li><b>After each card</b> a banner shows everyone what happened. <b>After each event</b> an outcome window shows the vote and what changed for each player's team.</li>
       <li><b>Events</b> show the team members they can affect under the card; click one to open their file.</li>
       <li><b>Log</b> (right): public history; purple lines are private to you. Click a department to filter it.</li>
-      <li><b>Personnel file</b>: click any employee (on the board, in the event strip, the target window or a name in the log) for a card with their portrait, traits (striped bars = unknown, 🔒 = only you know), loyalty ladder, side and recent actions. ✕, Escape or a click outside closes it.</li>
+      <li><b>Personnel file</b>: click any employee (on the board, in the event strip, the target window or a name in the log) for a card with their portrait, traits (??? = not learned yet, 🔒 = only you know), loyalty ladder, side and recent actions. ✕, Escape or a click outside closes it.</li>
       <li><b>Sound &amp; tutorial</b>: 🔊 / 🔇 in the top bar (and on the title screen) turns the sound effects on or off. New? <b>Tutorial</b> on the title screen plays a guided first turn against two bots.</li></ul>
     <h4>On the board</h4>
     <ul><li>Each employee is a portrait card on a small plinth. The ring around the plinth is loyalty: ${L} gold, ${F} green, ${N} grey, ${S} orange, ${R} red.</li>
